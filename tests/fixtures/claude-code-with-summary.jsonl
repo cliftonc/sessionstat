@@ -1,0 +1,4 @@
+{"type":"summary","summary":"Command Styling and Message Type Improvements","leafUuid":"cf470154-bf56-4b02-89ac-7e422e3cae13"}
+{"type":"summary","summary":"Session Duration: 45 minutes, Messages: 23, Tools used: 15","leafUuid":"another-uuid"}
+{"parentUuid":null,"isSidechain":false,"userType":"external","cwd":"/test","sessionId":"test-session-123","version":"1.0.0","gitBranch":"main","type":"user","message":{"role":"user","content":"Hello, can you help me?"},"uuid":"msg-1","timestamp":"2025-09-29T10:00:00.000Z"}
+{"parentUuid":"msg-1","isSidechain":false,"userType":"external","cwd":"/test","sessionId":"test-session-123","version":"1.0.0","gitBranch":"main","message":{"id":"msg-2","type":"message","role":"assistant","model":"claude-sonnet-4","content":[{"type":"text","text":"Hello! I'd be happy to help you. What do you need assistance with?"}]},"requestId":"req-1","type":"assistant","uuid":"msg-2","timestamp":"2025-09-29T10:00:05.000Z"}

@@ -1,0 +1,52 @@
+{
+  "name": "sessionstat",
+  "version": "0.1.0",
+  "description": "Post Claude Code session stats on your pull requests, using your own gh login",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "sessionstat": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check src tests",
+    "lint:fix": "biome check --write src tests",
+    "format": "biome format --write src tests",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "commander": "^15.0.0",
+    "mustache": "^4.2.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/mustache": "^4.2.6",
+    "@types/node": "^24.0.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  },
+  "keywords": [
+    "claude-code",
+    "github",
+    "pull-request",
+    "cli",
+    "hooks"
+  ],
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@biomejs/biome",
+      "esbuild"
+    ]
+  }
+}
