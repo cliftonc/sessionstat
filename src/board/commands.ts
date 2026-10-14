@@ -76,7 +76,11 @@ export async function runBoardResync(
   const settings = await loadBoardSettings(repoRoot, slug)
   if (!settings)
     throw new Error(`No project board for ${slug}. Add one with: sessionstat board setup`)
-  const lookup = await findPr(deps.run, repoRoot, options.pr ? { branch: options.pr, anyState: true } : {})
+  const lookup = await findPr(
+    deps.run,
+    repoRoot,
+    options.pr ? { branch: options.pr, anyState: true } : {}
+  )
   if (lookup.status !== 'found') throw new Error(`No open PR found (${lookup.status})`)
   const pr = lookup.pr
   if (!pr.id) throw new Error('gh pr view returned no PR id')
