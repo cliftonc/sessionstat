@@ -4,6 +4,8 @@ import type { CommandRunner } from './runner.js'
 export const MARKER = '<!-- sessionstat -->'
 
 export interface PullRequest {
+  /** GraphQL node id, for adding the PR to a project board. */
+  id?: string
   number: number
   url: string
   headRefName: string
@@ -30,22 +32,25 @@ const GH_TIMEOUT = 20_000
 export async function findPr(
   run: CommandRunner,
   cwd: string,
-  options: { timeoutMs?: number; branch?: string } = {}
+  options: { timeoutMs?: number; branch?: string; anyState?: boolean } = {}
 ): Promise<PrLookup> {
   const args = ['pr', 'view']
   if (options.branch) args.push(options.branch)
-  args.push('--json', 'number,url,headRefName,state,createdAt')
+  args.push('--json', 'id,number,url,headRefName,state,createdAt')
   const result = await run('gh', args, { cwd, timeoutMs: options.timeoutMs ?? GH_TIMEOUT })
-  return interpretPrView(result)
+  return interpretPrView(result, options)
 }
 
-export function interpretPrView(result: {
-  code: number
-  stdout: string
-  stderr: string
-  notFound?: boolean
-  timedOut?: boolean
-}): PrLookup {
+export function interpretPrView(
+  result: {
+    code: number
+    stdout: string
+    stderr: string
+    notFound?: boolean
+    timedOut?: boolean
+  },
+  options: { anyState?: boolean } = {}
+): PrLookup {
   if (result.notFound) return { status: 'not-installed' }
   if (result.timedOut) return { status: 'timeout' }
   if (result.code !== 0) {
@@ -63,8 +68,9 @@ export function interpretPrView(result: {
     if (typeof pr.number !== 'number' || typeof pr.url !== 'string') {
       return { status: 'error', message: 'unexpected gh pr view output' }
     }
-    // A merged or closed PR for the branch is not somewhere to keep posting.
-    if (pr.state && pr.state !== 'OPEN') return { status: 'none' }
+    // A merged or closed PR for the branch is not somewhere to keep posting. (A board resync
+    // reads one, though: its comments are still the record of its sessions.)
+    if (!options.anyState && pr.state && pr.state !== 'OPEN') return { status: 'none' }
     return { status: 'found', pr }
   } catch {
     return { status: 'error', message: 'gh pr view returned invalid JSON' }

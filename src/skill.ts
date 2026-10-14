@@ -12,7 +12,7 @@ export function buildSkill(version: string): string {
   const commands = COMMANDS.map(c => `- \`${c.usage}\` — ${c.summary}`).join('\n')
   return `---
 name: sessionstat
-description: Explain and configure sessionstat, which posts Claude Code session stats as a comment on the GitHub pull request for the current branch. Use when the user asks about the sessionstat PR comment or session stats on a PR, wants to change, reorder or hide parts of the sessionstat comment or edit the sessionstat template, asks about the "sessionstat:" notice shown at the start of a session, asks why no stats comment appeared on a PR, or wants to enable or disable sessionstat globally or for a repository.
+description: Explain and configure sessionstat, which posts Claude Code session stats as a comment on the GitHub pull request for the current branch. Use when the user asks about the sessionstat PR comment or session stats on a PR, wants to change, reorder or hide parts of the sessionstat comment or edit the sessionstat template, asks about the "sessionstat:" notice shown at the start of a session, asks why no stats comment appeared on a PR, or wants to enable or disable sessionstat globally or for a repository, or wants session stats on a GitHub Projects board (fields, charts, reporting across PRs).
 ---
 
 <!-- Written by sessionstat ${version}. Overwritten by \`sessionstat setup\`; do not edit. -->
@@ -106,6 +106,32 @@ the comment. Useful view fields: \`totals\`, \`sessions\`, \`buildSessions\` /
 \`followUpSessions\` (with \`hasBuild\` / \`hasFollowUp\`), and per session \`commits\`. A template
 that fails to parse is logged and the default is used instead.
 
+## Project board (optional)
+
+Each PR can also go on a GitHub Projects v2 board, one per repository, with number, date and
+single-select fields (\`Agent sessions\`, \`Agent active minutes\`, \`Agent turns\`, \`Agent tool calls\`,
+\`Agent tokens (M)\`, \`Agent cost (USD)\`, \`Agent API value (USD)\`, \`Agent errors\`, \`Agent model\`,
+\`Agent last session\`, build/follow-up sessions, follow-up minutes and cost), so the user can
+chart agent effort across PRs with GitHub's table views and Insights.
+
+- **Setting it up.** \`sessionstat setup\` offers it when run in a terminal. Otherwise
+  \`sessionstat board setup create\` makes \`sessionstat: owner/repo\` (or reuses one of that
+  name), owned by the repository's owner and linked to the repository; \`sessionstat board setup
+  <project-url>\` uses an existing project. Fields are created if missing, matched by name; a
+  same-named field of another type is left alone. It needs the \`project\` scope:
+  \`gh auth refresh -s project\` (the user must run this themselves; it opens a browser).
+- **The setting** is \`{"board": {"owner", "number", "prefix"?, "fields"?}}\` in
+  \`<repo>/.sessionstat.json\` (committable), or under \`boards["owner/repo"]\` in config.json
+  for a global install. \`prefix\` defaults to \`Agent \`; \`fields\` is a list of keys (see
+  \`sessionstat board status\`) to keep, all by default.
+- **When it updates.** Right after a comment is created or updated, in the same background
+  worker. Values are totals over every sessionstat comment on the PR, all authors, recomputed
+  each time. Only changed fields are written; ids are cached in \`~/.sessionstat/board-cache.json\`.
+  A board failure is logged and never stops the comment.
+- **Troubleshooting.** \`sessionstat board status\` (fields, scope, last sync, last error) and
+  \`sessionstat logs --errors\`. \`sessionstat board resync [--pr <n>]\` rewrites a PR's fields from
+  its comments, merged PRs included, e.g. to backfill PRs from before the board existed.
+
 ## Configuration: \`~/.sessionstat/config.json\`
 
 | Key | Default | Meaning |
@@ -114,6 +140,7 @@ that fails to parse is logged and the default is used instead.
 | \`enabled\` | \`true\` | \`false\` turns sessionstat off everywhere (\`sessionstat disable --global\`) |
 | \`disabledRepos\` | \`[]\` | Repository roots where it is off (\`sessionstat disable\` inside the repo) |
 | \`projectInstalls\` | \`[]\` | Repositories with a project-scope install, kept by setup |
+| \`boards\` | \`{}\` | Project boards by \`owner/repo\` for repositories without a \`.sessionstat.json\` |
 
 ## Troubleshooting: "no stats comment on my PR"
 

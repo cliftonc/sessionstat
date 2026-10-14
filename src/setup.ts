@@ -1,6 +1,7 @@
 import { constants, access, mkdir, realpath, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
+import { setupBoard } from './board/setup.js'
 import { loadConfig, updateConfig } from './config.js'
 import { paths, projectSettingsPath, repoTemplatePath } from './paths.js'
 import type { CommandRunner } from './runner.js'
@@ -33,6 +34,8 @@ export interface SetupDeps {
   entry?: string
   nodePath?: string
   cwd?: string
+  /** Ask the user a question; absent when not interactive, so nothing is asked. */
+  ask?: (question: string) => Promise<string>
 }
 
 export interface SetupOptions {
@@ -40,6 +43,11 @@ export interface SetupOptions {
   path?: string
   /** Install into the user-level settings, so it runs in every repository. Never the default. */
   global?: boolean
+  /**
+   * The project board: `create`, a project URL, or `false` to not ask. Absent: offer one if
+   * the repository has none and someone is there to answer.
+   */
+  projectBoard?: string | false
 }
 
 export const NOT_IN_REPO =
@@ -317,6 +325,28 @@ export async function runSetup(options: SetupOptions, deps: SetupDeps): Promise<
     })
   } catch (err) {
     checks.push({ ok: false, label: 'Could not install the Claude skill', detail: String(err) })
+  }
+
+  // ── Project board ────────────────────────────────────────────────────────
+  // Optional and separate from posting: a problem here is a warning, since comments still post.
+  const boardRepo = repoRoot ?? (await repoRootOf(deps.run, cwd))
+  if (boardRepo && options.projectBoard !== false) {
+    try {
+      const board = await setupBoard(
+        { repoRoot: boardRepo, choice: options.projectBoard, global: !repoRoot },
+        { run: deps.run, ask: deps.ask }
+      )
+      for (const check of board.checks) {
+        checks.push(check.ok ? check : { ...check, ok: true, warn: true })
+      }
+    } catch (err) {
+      checks.push({
+        ok: true,
+        warn: true,
+        label: 'Could not set up the project board',
+        detail: err instanceof Error ? err.message : String(err),
+      })
+    }
   }
 
   await mkdir(paths.sessions(), { recursive: true, mode: 0o700 })

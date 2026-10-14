@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import type { BoardSettings } from './board/settings.js'
 import { paths } from './paths.js'
 
 export interface SessionstatConfig {
@@ -11,6 +12,8 @@ export interface SessionstatConfig {
   disabledRepos?: string[]
   /** Repositories that have a project-scope install, so `status` and `uninstall` can find them. */
   projectInstalls?: string[]
+  /** Projects v2 boards by `owner/repo`, for repositories without a `.sessionstat.json`. */
+  boards?: Record<string, BoardSettings>
 }
 
 export async function loadConfig(): Promise<SessionstatConfig> {

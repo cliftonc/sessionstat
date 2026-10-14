@@ -167,11 +167,68 @@ block cannot close its own HTML comment.
 Sessions are split into **build** (started before the PR existed) and **follow-up** (started
 after it was opened: responding to review). The default template shows them as two tables.
 
+## Project board
+
+The comment is for reading; a [GitHub Projects](https://docs.github.com/en/issues/planning-and-tracking-with-projects)
+board is for reporting. Optionally, sessionstat puts each PR on a board for the repository and
+keeps number fields on it up to date, so GitHub's own table views (group by, sum) and Insights
+charts show agent effort across PRs and over time. No server is involved.
+
+When you run `sessionstat setup` in a terminal, it offers to set one up: create a board called
+`sessionstat: owner/repo` (owned by the repository's owner and linked to the repository, so it
+shows on its Projects tab), or paste the URL of an existing project. Add one later with
+`sessionstat board setup`, or without questions:
+
+```sh
+sessionstat setup --project-board create
+sessionstat setup --project-board https://github.com/orgs/acme/projects/7
+sessionstat board setup create
+sessionstat board status        # the project, each field, last sync, token scope
+sessionstat board resync --pr 12   # rewrite a PR's fields from its comments (merged PRs too)
+```
+
+The token needs the `project` scope: `gh auth refresh -s project`. Setup checks for it.
+
+After each comment is posted, the PR is added to the board and these fields are written. The
+values are totals over **every** sessionstat comment on the PR (every contributor's data block),
+recomputed each time and never incremented, so whoever posts last writes the complete total and
+the board can always be rebuilt from the comments:
+
+| Field | Type | |
+|---|---|---|
+| `Agent sessions`, `Agent turns`, `Agent tool calls` | Number | |
+| `Agent active minutes` | Number | Sum of session durations |
+| `Agent tokens (M)` | Number | Input + output + cache, in millions |
+| `Agent cost (USD)` | Number | Actual spend; empty for subscription-only PRs |
+| `Agent API value (USD)` | Number | The same tokens at API list price |
+| `Agent errors` | Number | Tool errors + interruptions |
+| `Agent model` | Single select | The model with the most session time; new models become new options |
+| `Agent last session` | Date | |
+| `Agent build sessions`, `Agent follow-up sessions` | Number | Before / after the PR was opened |
+| `Agent follow-up minutes`, `Agent follow-up cost (USD)` | Number | Effort spent responding to review |
+
+Fields are created if missing and matched by name; a field of yours with the same name and a
+different type is left alone. Only changed values are written, in one request. A board that
+cannot be written is logged (`sessionstat logs --errors`) and never stops the comment.
+
+The setting lives in `<repo>/.sessionstat.json` (commit it so the team shares the board), or for
+a `--global` install under `boards` in `~/.sessionstat/config.json`:
+
+```json
+{ "board": { "owner": "acme", "number": 7, "prefix": "Agent ", "fields": ["sessions", "minutes", "cost"] } }
+```
+
+`prefix` (default `Agent `) and `fields` (keys from `sessionstat board status`; all by default)
+are optional.
+
 ## Commands
 
 | Command | |
 |---|---|
-| `sessionstat setup [path] [--global]` | Install hooks (this repository, or everywhere with `--global`), template and skill; check everything |
+| `sessionstat setup [path] [--global] [--project-board <url\|create>] [--no-project-board]` | Install hooks (this repository, or everywhere with `--global`), template and skill; check everything; offer a project board |
+| `sessionstat board setup [url\|create] [--global]` | Create or pick the repository's project board and add its fields |
+| `sessionstat board status` | The board, its fields, last sync and token scope |
+| `sessionstat board resync [--pr <number>]` | Rewrite a PR's board fields from its comments |
 | `sessionstat uninstall [path] [--global]` | Remove the hooks from this repository, or the global ones |
 | `sessionstat status` | Which scopes cover this repository, gh login, template in effect, sessions, queued checks, last error |
 | `sessionstat show [--all] [--transcript <file...>] [--no-pr]` | Print the comment without posting |
@@ -242,6 +299,7 @@ There are two dollar figures, and they are never added together:
 | `enabled` | `true` | `false` turns sessionstat off everywhere it is installed |
 | `disabledRepos` | `[]` | Repository roots where it is off |
 | `projectInstalls` | `[]` | Repositories with a project-scope install (kept by setup) |
+| `boards` | `{}` | Project boards by `owner/repo`, for repositories without a `.sessionstat.json` |
 
 ## Troubleshooting
 
