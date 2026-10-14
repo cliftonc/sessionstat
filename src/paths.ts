@@ -24,6 +24,8 @@ export const paths = {
   pollerLock: () => join(stateDir(), 'locks', 'poller.lock'),
   logFile: () => join(stateDir(), 'sessionstat.log'),
   config: () => join(stateDir(), 'config.json'),
+  /** Project, field and item ids for each repository's board, and the values last written. */
+  boardCache: () => join(stateDir(), 'board-cache.json'),
   homeTemplate: () => join(stateDir(), 'template.md'),
   claudeDir: () => join(home(), '.claude'),
   /** User scope. Claude Code has no user-level `settings.local.json` in its precedence chain. */

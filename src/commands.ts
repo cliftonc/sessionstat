@@ -14,9 +14,10 @@ export interface CommandDoc {
 export const COMMANDS: CommandDoc[] = [
   {
     name: 'setup',
-    usage: 'sessionstat setup [path] [--global]',
+    usage:
+      'sessionstat setup [path] [--global] [--project-board <url|create>] [--no-project-board]',
     summary:
-      '(alias: install) Install the Claude Code hooks into the repository containing path (default: here) — or into every repository only with --global — plus the default template and the Claude skill, and check gh, git and the hook command',
+      '(alias: install) Install the Claude Code hooks into the repository containing path (default: here) — or into every repository only with --global — plus the default template and the Claude skill, and check gh, git and the hook command. In a terminal it then offers to set up a GitHub Projects board for the repository; --project-board does it without asking, --no-project-board skips it',
   },
   {
     name: 'uninstall',
@@ -40,6 +41,24 @@ export const COMMANDS: CommandDoc[] = [
     name: 'post',
     usage: 'sessionstat post [--force]',
     summary: 'Post or update the comment on the current branch’s PR now',
+  },
+  {
+    name: 'board setup',
+    usage: 'sessionstat board setup [url|create] [--global]',
+    summary:
+      'Set up the GitHub Projects board this repository’s PRs are mirrored to: create "sessionstat: owner/repo" or use an existing project, add the fields and link it to the repository. With no argument it checks the board already set up, or asks',
+  },
+  {
+    name: 'board status',
+    usage: 'sessionstat board status',
+    summary:
+      'Show this repository’s project board: the setting, the token’s project scope, each field, the last sync and the last error',
+  },
+  {
+    name: 'board resync',
+    usage: 'sessionstat board resync [--pr <number>]',
+    summary:
+      'Rewrite a PR’s board fields from its sessionstat comments alone (every author’s data block)',
   },
   {
     name: 'template init',

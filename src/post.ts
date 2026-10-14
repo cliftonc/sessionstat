@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { detectBilling } from './billing.js'
+import { type BoardOutcome, syncBoard } from './board/board.js'
+import { loadBoardSettings, repoSlug } from './board/settings.js'
 import { isEnabledFor, loadConfig } from './config.js'
 import {
   type PrLookup,
@@ -16,6 +18,7 @@ import {
 import { log } from './log.js'
 import { type SessionStats, computeSessionStats } from './metrics/index.js'
 import { paths } from './paths.js'
+import { prStateFromComments } from './pr-state.js'
 import type { CommandRunner } from './runner.js'
 import { type SessionRecord, sessionsFor } from './sessions.js'
 import {
@@ -24,6 +27,7 @@ import {
   mergeSessions,
   parseDataBlock,
   toDataSession,
+  unionSessions,
 } from './template/data.js'
 import { type RenderResult, renderComment, resolveTemplate } from './template/render.js'
 import { type CommentView, buildView } from './template/view.js'
@@ -215,8 +219,8 @@ export type PostOutcome =
   | { status: 'no-sessions' }
   | { status: 'no-pr'; lookup: PrLookup['status'] }
   | { status: 'unchanged'; pr: PullRequest }
-  | { status: 'created'; pr: PullRequest; commentId: number }
-  | { status: 'updated'; pr: PullRequest; commentId: number }
+  | { status: 'created'; pr: PullRequest; commentId: number; board?: BoardOutcome }
+  | { status: 'updated'; pr: PullRequest; commentId: number; board?: BoardOutcome }
   | { status: 'error'; message: string }
 
 /**
@@ -308,7 +312,8 @@ export async function postForBranch(
     }
     await remember(ours.id)
     await log('INFO', `Updated comment ${ours.id} on ${pr.url} (${sessions.length} sessions)`)
-    return { status: 'updated', pr, commentId: ours.id }
+    const board = await updateBoard(deps, repoRoot, records, pr, sessions, comments.output)
+    return { status: 'updated', pr, commentId: ours.id, ...(board ? { board } : {}) }
   }
 
   const created = await createComment(deps.run, repoRoot, pr.number, rendered.body)
@@ -318,5 +323,49 @@ export async function postForBranch(
   }
   await remember(created.id)
   await log('INFO', `Created comment ${created.id} on ${pr.url}`)
-  return { status: 'created', pr, commentId: created.id }
+  const board = await updateBoard(deps, repoRoot, records, pr, sessions, comments.output)
+  return { status: 'created', pr, commentId: created.id, ...(board ? { board } : {}) }
+}
+
+/**
+ * After a comment is written, mirror the PR's totals onto the repository's project board, if
+ * it has one. The totals are over every author's sessions: this comment's plus the data block
+ * of every other sessionstat comment on the PR. A board failure is logged and never undoes or
+ * blocks the comment.
+ */
+async function updateBoard(
+  deps: PostDeps,
+  repoRoot: string,
+  records: SessionRecord[],
+  pr: PullRequest,
+  sessions: DataSession[],
+  commentsOutput: string
+): Promise<BoardOutcome | undefined> {
+  const slug = repoSlug(records.find(r => r.remote)?.remote)
+  if (!slug) return undefined
+  const settings = await loadBoardSettings(repoRoot, slug)
+  if (!settings) return undefined
+  if (!pr.id) {
+    await log('WARN', `No node id for ${pr.url}; cannot add it to the project board`)
+    return { status: 'error', message: 'gh pr view returned no PR id' }
+  }
+  let outcome: BoardOutcome
+  try {
+    const all = unionSessions([sessions, prStateFromComments(commentsOutput).sessions])
+    outcome = await syncBoard(deps.run, repoRoot, {
+      slug,
+      board: settings.board,
+      pr: { id: pr.id, number: pr.number },
+      sessions: all,
+      now: deps.now?.(),
+    })
+  } catch (err) {
+    outcome = { status: 'error', message: String(err) }
+  }
+  if (outcome.status === 'error') {
+    await log('ERROR', `Project board for ${slug} #${pr.number}: ${outcome.message}`)
+  } else if (outcome.status === 'updated') {
+    await log('INFO', `Project board ${outcome.url}: #${pr.number} ${outcome.written.join(', ')}`)
+  }
+  return outcome
 }

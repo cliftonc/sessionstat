@@ -2,7 +2,15 @@ import type { RunOptions, RunResult } from '../src/runner.js'
 import { failed, ok } from './helpers.js'
 
 /** A tiny in-memory GitHub: one PR (or none) and its issue comments. */
-export function fakeGitHub(initial: { pr?: { number: number; branch: string } | null } = {}) {
+export function fakeGitHub(
+  initial: {
+    pr?: { number: number; branch: string } | null
+    /** Answers `gh api graphql`, e.g. `fakeProjects().graphql`. */
+    graphql?: (input: string) => RunResult
+    /** `Token scopes:` for `gh auth status`; omitted from the output when null. */
+    scopes?: string[] | null
+  } = {}
+) {
   const state = {
     pr: initial.pr === undefined ? { number: 7, branch: 'feature/login' } : initial.pr,
     comments: [] as Array<{ id: number; body: string; user: { login: string } }>,
@@ -16,10 +24,20 @@ export function fakeGitHub(initial: { pr?: { number: number; branch: string } | 
     if (!state.authenticated) {
       return failed('To get started with GitHub CLI, please run:  gh auth login', 4)
     }
+    if (args[0] === 'auth' && args[1] === 'status') {
+      const scopes = initial.scopes === undefined ? ['repo', 'project'] : initial.scopes
+      return ok(
+        `github.com\n  ✓ Logged in to github.com account ${state.login}\n${scopes ? `  - Token scopes: ${scopes.map(s => `'${s}'`).join(', ')}\n` : ''}`
+      )
+    }
+    if (args[0] === 'api' && args[1] === 'graphql') {
+      return initial.graphql ? initial.graphql(options?.input ?? '{}') : failed('no graphql')
+    }
     if (args[0] === 'pr' && args[1] === 'view') {
       if (!state.pr) return failed('no pull requests found for branch "feature/login"')
       return ok(
         JSON.stringify({
+          id: `PR_${state.pr.number}`,
           number: state.pr.number,
           url: `https://github.com/acme/app/pull/${state.pr.number}`,
           headRefName: state.pr.branch,

@@ -3,6 +3,8 @@ import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { Command, Option } from 'commander'
 import pkg from '../package.json' with { type: 'json' }
+import { runBoardResync, runBoardStatus } from './board/commands.js'
+import { setupBoard } from './board/setup.js'
 import { commandDoc } from './commands.js'
 import { isEnabledFor, loadConfig, updateConfig } from './config.js'
 import { type PullRequest, currentLogin, fetchComments, findOurComment, findPr } from './gh.js'
@@ -26,6 +28,22 @@ export interface ProgramDeps {
   err: (line: string) => void
   cwd: () => string
   setExitCode: (code: number) => void
+  /** Ask the user something. Absent when stdin or stdout is not a terminal. */
+  ask?: (question: string) => Promise<string>
+}
+
+/** A question on the terminal, or nothing when there is no one at it (CI, a pipe, a hook). */
+function terminalAsk(): ((question: string) => Promise<string>) | undefined {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return undefined
+  return async question => {
+    const { createInterface } = await import('node:readline/promises')
+    const rl = createInterface({ input: process.stdin, output: process.stdout })
+    try {
+      return await rl.question(question)
+    } finally {
+      rl.close()
+    }
+  }
 }
 
 const defaultDeps: ProgramDeps = {
@@ -36,11 +54,13 @@ const defaultDeps: ProgramDeps = {
   setExitCode: code => {
     process.exitCode = code
   },
+  ask: terminalAsk(),
 }
 
 interface ScopeFlags {
   global?: boolean
   project?: string | boolean
+  projectBoard?: string | false
 }
 
 interface ViewOptions {
@@ -144,17 +164,26 @@ export function buildProgram(overrides: Partial<ProgramDeps> = {}): Command {
     .description(commandDoc('setup'))
     .argument('[path]', 'a path inside the repository to install into (default: here)')
     .option('--global', 'install for every repository instead (~/.claude/settings.json)')
+    .option(
+      '--project-board <url|create>',
+      'also mirror stats to a GitHub Projects board: an existing project URL, or create one'
+    )
+    .option('--no-project-board', 'do not offer a project board')
     .addOption(projectAlias())
     .action(async (path: string | undefined, opts: ScopeFlags) => {
       try {
         const scope = scopeArgs('setup', path, opts)
         if (!scope) return
-        const result = await runSetup(scope, {
-          run: deps.run,
-          out: deps.out,
-          version: VERSION,
-          cwd: deps.cwd(),
-        })
+        const result = await runSetup(
+          { ...scope, projectBoard: opts.projectBoard },
+          {
+            run: deps.run,
+            out: deps.out,
+            version: VERSION,
+            cwd: deps.cwd(),
+            ask: deps.ask,
+          }
+        )
         if (!result.ok) deps.setExitCode(1)
       } catch (err) {
         fail(err)
@@ -230,6 +259,11 @@ export function buildProgram(overrides: Partial<ProgramDeps> = {}): Command {
           case 'created':
           case 'updated':
             deps.out(`✓ ${outcome.status} the comment on ${outcome.pr.url}`)
+            if (outcome.board?.status === 'error') {
+              deps.err(`  project board not updated: ${outcome.board.message}`)
+            } else if (outcome.board) {
+              deps.out(`✓ project board ${outcome.board.status}: ${outcome.board.url}`)
+            }
             break
           case 'unchanged':
             deps.out(`✓ Comment on ${outcome.pr.url} is already up to date (--force to rewrite)`)
@@ -253,6 +287,71 @@ export function buildProgram(overrides: Partial<ProgramDeps> = {}): Command {
           case 'error':
             throw new Error(outcome.message)
         }
+      } catch (err) {
+        fail(err)
+      }
+    })
+
+  const board = program
+    .command('board')
+    .description('Mirror session stats into a GitHub Projects board')
+  board
+    .command('setup')
+    .description(commandDoc('board setup'))
+    .argument('[url|create]', 'an existing project URL, or create to make one')
+    .option('--global', 'save the setting in ~/.sessionstat/config.json, not .sessionstat.json')
+    .action(async (choice: string | undefined, opts: { global?: boolean }) => {
+      try {
+        const meta = await getGitMetadata(deps.cwd(), deps.run)
+        if (!meta.toplevel) throw new Error('Not inside a git repository')
+        const result = await setupBoard(
+          { repoRoot: meta.toplevel, choice, global: opts.global },
+          { run: deps.run, ask: deps.ask }
+        )
+        if (result.checks.length === 0) {
+          deps.out(
+            choice
+              ? 'Nothing to do.'
+              : 'Pass a project URL or `create`: sessionstat board setup create'
+          )
+        }
+        for (const check of result.checks) {
+          deps.out(`  ${!check.ok ? '✗' : check.warn ? '!' : '✓'} ${check.label}`)
+          if (check.detail) deps.out(`      ${check.detail}`)
+          if (check.fix && (!check.ok || check.warn)) deps.out(`      fix: ${check.fix}`)
+        }
+        if (!result.ok) deps.setExitCode(1)
+      } catch (err) {
+        fail(err)
+      }
+    })
+  board
+    .command('status')
+    .description(commandDoc('board status'))
+    .action(async () => {
+      try {
+        const healthy = await runBoardStatus({ run: deps.run, out: deps.out, cwd: deps.cwd() })
+        if (!healthy) deps.setExitCode(1)
+      } catch (err) {
+        fail(err)
+      }
+    })
+  board
+    .command('resync')
+    .description(commandDoc('board resync'))
+    .option('--pr <number>', 'a PR number, instead of the current branch’s PR')
+    .action(async (opts: { pr?: string }) => {
+      try {
+        const outcome = await runBoardResync(
+          { run: deps.run, out: deps.out, cwd: deps.cwd() },
+          opts
+        )
+        if (outcome.status === 'error') throw new Error(outcome.message)
+        deps.out(
+          outcome.status === 'updated'
+            ? `✓ Wrote ${outcome.written.length} fields on ${outcome.url}`
+            : `✓ Already up to date on ${outcome.url}`
+        )
       } catch (err) {
         fail(err)
       }

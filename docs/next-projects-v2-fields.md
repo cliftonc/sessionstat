@@ -1,5 +1,7 @@
 # Next step: mirror PR session stats into GitHub Projects v2 fields
 
+**Status:** built on `feat/project-board` (2026-10-14). See the README's "Project board" section.
+
 ## Why
 The PR comment is for people to read, but you can't report on it. If each PR is an item in a
 Projects v2 board with number fields, GitHub's own table views (group by, sum) and Insights
