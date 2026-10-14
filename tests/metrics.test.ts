@@ -90,7 +90,7 @@ describe('the counts the comment adds', () => {
       turns: 2,
       toolCalls: 7,
       filesEdited: ['/tmp/example-repo/src/login.ts', '/tmp/example-repo/tests/login.test.ts'],
-      costUsd: 3.4112,
+      valueUsd: 3.4112,
       errors: 1,
       toolResults: 7,
       compactions: 1,
@@ -106,9 +106,9 @@ describe('the counts the comment adds', () => {
     ])
   })
 
-  it('has no cost before Claude Code writes its cost-state record', async () => {
+  it('has no value for a model with no published rate', async () => {
     const { stats } = await computeSessionStats(read('claude-code-sample-1.jsonl'))
-    expect(stats.costUsd).toBeNull()
+    expect(stats.valueUsd).toBeNull()
     expect(stats.compactions).toBe(0)
   })
 

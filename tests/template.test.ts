@@ -23,6 +23,7 @@ async function sessionsFor(...fixtures: string[]): Promise<DataSession[]> {
         repoRoot: '/tmp/example-repo',
         openedBeforePr: f.includes('sample-2'),
         commits: f.includes('synthetic') ? ['0123456789abcdef'] : [],
+        billing: f.includes('synthetic') ? 'subscription' : 'api',
       })
     )
   }
@@ -60,19 +61,27 @@ describe('default template', () => {
       "<!-- sessionstat -->
       ### 🤖 Claude Code session stats
 
-      **1 session** · 2m · 2 prompts · 7 tool calls · 2 files edited · $3.41
+      **1 session** · 2m · 2 prompts · 7 tool calls · 2 files edited · **Cost:** subscription · **API value:** $3.41
 
-      | Session | Author | Model | Started | Duration | Prompts | Tool calls | Files | Commits | Cost |
-      |---|---|---|---|---|---|---|---|---|---|
-      | \`syntheti\` | alice | claude-opus-5-5 | 2026-10-01 09:00 UTC | 2m | 2 | 7 | 2 | 1 | $3.41 |
+      | Session | Author | Model | Started | Duration |
+      |---|---|---|---|---|
+      | \`syntheti\` | alice | claude-opus-5-5 | 2026-10-01 09:00 UTC | 2m |
 
-      **Tokens:** 1.2k in · 45k out · 1.2M cache read · 80k cache write · **Cost:** $3.41
+      | Session | Prompts | Tool calls | Files | Commits | Cost | API value |
+      |---|--:|--:|--:|--:|--:|--:|
+      | \`syntheti\` | 2 | 7 | 2 | 1 | subscription | $3.41 |
+      | **Total** | **2** | **7** | **2** | **1** | **subscription** | **$3.41** |
+
+      | Session | Input | Output | Cache read | Cache write |
+      |---|--:|--:|--:|--:|
+      | \`syntheti\` | 1.2k | 45k | 1.2M | 80k |
+      | **Total** | **1.2k** | **45k** | **1.2M** | **80k** |
 
       **Quality:** 86% tool success · tool errors: 1 · interruptions: 1 · compactions: 1 · tests: 1 passed, 1 failed
 
       <sub>Posted by [sessionstat](https://www.npmjs.com/package/sessionstat) · updated 2026-10-14 12:00 UTC</sub>
 
-      <!-- sessionstat:data {"v":1,"branch":"feature/login","sessions":[{"id":"synthetic-session-0001","branch":"feature/login","author":"alice","model":"claude-opus-5-5","startedAt":"2026-10-01T09:00:05.000Z","endedAt":"2026-10-01T09:02:21.000Z","durationMs":136000,"openedBeforePr":false,"commits":["0123456789abcdef"],"turns":2,"toolCalls":7,"toolResults":7,"tools":[{"name":"Bash","count":3},{"name":"Edit","count":2},{"name":"Read","count":1},{"name":"Write","count":1}],"files":["src/login.ts","tests/login.test.ts"],"filesEdited":2,"tokens":{"input":1200,"output":45000,"cacheRead":1200000,"cacheWrite":80000},"costUsd":3.4112,"errors":1,"interruptions":1,"compactions":1,"testRuns":{"passed":1,"failed":1},"successRate":86,"processQuality":50,"iterations":1,"linesAdded":42,"linesRemoved":3}],"totals":{"sessions":1,"durationMs":136000,"turns":2,"toolCalls":7,"toolResults":7,"filesEdited":2,"commits":1,"tokens":{"input":1200,"output":45000,"cacheRead":1200000,"cacheWrite":80000},"costUsd":3.4112,"costPartial":false,"errors":1,"interruptions":1,"compactions":1,"testRuns":{"passed":1,"failed":1},"successRate":86}} -->
+      <!-- sessionstat:data {"v":1,"branch":"feature/login","sessions":[{"id":"synthetic-session-0001","branch":"feature/login","author":"alice","model":"claude-opus-5-5","startedAt":"2026-10-01T09:00:05.000Z","endedAt":"2026-10-01T09:02:21.000Z","durationMs":136000,"openedBeforePr":false,"commits":["0123456789abcdef"],"turns":2,"toolCalls":7,"toolResults":7,"tools":[{"name":"Bash","count":3},{"name":"Edit","count":2},{"name":"Read","count":1},{"name":"Write","count":1}],"files":["src/login.ts","tests/login.test.ts"],"filesEdited":2,"tokens":{"input":1200,"output":45000,"cacheRead":1200000,"cacheWrite":80000},"billing":"subscription","valueUsd":3.4112,"costUsd":null,"errors":1,"interruptions":1,"compactions":1,"testRuns":{"passed":1,"failed":1},"successRate":86,"processQuality":50,"iterations":1,"linesAdded":42,"linesRemoved":3}],"totals":{"sessions":1,"durationMs":136000,"turns":2,"toolCalls":7,"toolResults":7,"filesEdited":2,"commits":1,"tokens":{"input":1200,"output":45000,"cacheRead":1200000,"cacheWrite":80000},"costUsd":null,"costPartial":false,"valueUsd":3.4112,"valuePartial":false,"billing":{"subscription":1,"api":0,"unknown":0},"errors":1,"interruptions":1,"compactions":1,"testRuns":{"passed":1,"failed":1},"successRate":86}} -->
       "
     `)
   })
@@ -98,11 +107,14 @@ describe('default template', () => {
     const view = await viewFor('claude-code-sample-1.jsonl', 'claude-code-synthetic.jsonl')
     expect(view.multipleSessions).toBe(true)
     expect(view.totals.costPartial).toBe(true)
+    expect(view.totals.valuePartial).toBe(true)
     const { body } = await render(view, repo)
     expect(body).toContain('<details>')
     expect(body).toContain('**2 sessions**')
-    expect(body).toContain('(some sessions not yet priced)')
-    expect(body).toMatch(/\| `b1a1efd7` \| alice \| claude-sonnet-4-20250514 .* \| – \|/)
+    expect(body).toContain('**Cost:** subscription (some sessions unknown)')
+    expect(body).toContain('**API value:** $3.41 (some sessions unpriced)')
+    // An API-billed session on a model with no published rate: neither figure is guessed.
+    expect(body).toMatch(/\| `b1a1efd7` \| \d+ \| \d+ \| \d+ \| \d+ \| – \| – \|/)
   })
 
   it('hides cost entirely when no session has one yet', async () => {

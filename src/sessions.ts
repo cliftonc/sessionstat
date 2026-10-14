@@ -1,5 +1,6 @@
 import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import type { Billing } from './billing.js'
 import { paths } from './paths.js'
 
 /**
@@ -28,6 +29,8 @@ export interface SessionRecord {
   startHead?: string
   /** HEAD commits first seen at the end of a turn, per branch. */
   commits: Array<{ branch: string; sha: string }>
+  /** Who pays for the session, detected in the hook's environment. Absent on older records. */
+  billing?: Billing
 }
 
 function recordPath(sessionId: string): string {
@@ -60,6 +63,7 @@ export interface SessionObservation {
   /** Record `head` as a commit made during the session (at Stop). */
   recordCommit?: boolean
   openedBeforePr?: boolean
+  billing?: Billing
   ended?: boolean
   now?: Date
 }
@@ -85,6 +89,9 @@ export async function recordSession(obs: SessionObservation): Promise<SessionRec
     commits.push({ branch: obs.branch, sha: obs.head })
   }
   const openedBeforePr = existing?.openedBeforePr ?? obs.openedBeforePr
+  // A later 'unknown' never erases what an earlier hook knew.
+  const billing =
+    obs.billing && obs.billing !== 'unknown' ? obs.billing : (existing?.billing ?? obs.billing)
 
   const record: SessionRecord = {
     sessionId: obs.sessionId,
@@ -99,6 +106,7 @@ export async function recordSession(obs: SessionObservation): Promise<SessionRec
     ...(openedBeforePr !== undefined ? { openedBeforePr } : {}),
     ...(startHead ? { startHead } : {}),
     commits,
+    ...(billing ? { billing } : {}),
   }
   await writeAtomic(recordPath(obs.sessionId), record)
   return record

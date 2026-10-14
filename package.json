@@ -22,7 +22,8 @@
     "lint:fix": "biome check --write src tests",
     "format": "biome format --write src tests",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "update-prices": "node scripts/update-prices.mjs"
   },
   "dependencies": {
     "commander": "^15.0.0",

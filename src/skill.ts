@@ -89,15 +89,15 @@ The comment is a [Mustache](https://mustache.github.io/mustache.5.html) template
 \`sessionstat template init\` (or \`--repo\`) writes the default out to edit, and
 \`sessionstat template vars\` prints every field available for the current branch. Numbers
 arrive pre-formatted (\`"1h 12m"\`, \`"$3.41"\`, \`"1.2M"\`); flags like \`multipleSessions\`,
-\`hasCost\`, \`hasTests\` and \`hasErrors\` exist to show or hide sections.
+\`hasCost\`, \`hasValue\`, \`hasTests\` and \`hasErrors\` exist to show or hide sections.
+\`cost\` is what was actually billed (\`subscription\` on a Claude plan); \`value\` is the same
+tokens at API list price. They are deliberately separate and never summed.
 
 Each section of the default template is one \`{{#…}}…{{/…}}\` block. To hide one, delete the
-block. For example, to drop the tokens line, remove:
+block. For example, to drop the API value from the summary line, remove:
 
 \`\`\`mustache
-{{#totals}}
-**Tokens:** {{tokens.input}} in · {{tokens.output}} out · …
-{{/totals}}
+{{#hasValue}} · **API value:** {{value}}…{{/hasValue}}
 \`\`\`
 
 Preview with \`sessionstat show\` before anything is posted. The \`<!-- sessionstat -->\` marker

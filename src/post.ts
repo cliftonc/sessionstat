@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { detectBilling } from './billing.js'
 import { isEnabledFor, loadConfig } from './config.js'
 import {
   type PrLookup,
@@ -83,6 +84,7 @@ export async function localSessions(
           repoRoot,
           openedBeforePr: resolveOpenedBeforePr(record, stats, ctx.pr),
           commits: (record.commits ?? []).filter(c => c.branch === branch).map(c => c.sha),
+          billing: record.billing ?? 'unknown',
         })
       )
     } catch (err) {
@@ -148,6 +150,8 @@ export async function buildCommentFromTranscripts(
   options: { repoRoot: string | null; branch: string; pr: PullRequest | null; now?: Date }
 ): Promise<BuiltComment> {
   const local: DataSession[] = []
+  // These transcripts ran here, so this machine's billing is the best answer available.
+  const billing = await detectBilling()
   for (const path of transcriptPaths) {
     const { stats } = await computeSessionStats(await readFile(path, 'utf-8'))
     local.push(
@@ -157,6 +161,7 @@ export async function buildCommentFromTranscripts(
         repoRoot: options.repoRoot,
         openedBeforePr: resolveOpenedBeforePr({}, stats, options.pr),
         commits: [],
+        billing,
       })
     )
   }

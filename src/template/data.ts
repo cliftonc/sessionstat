@@ -1,4 +1,5 @@
 import { isAbsolute, relative, sep } from 'node:path'
+import type { Billing } from '../billing.js'
 import type { SessionStats } from '../metrics/index.js'
 
 /**
@@ -17,6 +18,11 @@ import type { SessionStats } from '../metrics/index.js'
  *
  * An HTML comment ends at the first `--`, which can occur inside a JSON string (a branch name, a
  * model id). Every `--` is written as `--`: still the same JSON, never two dashes in a row.
+ *
+ * Two dollar figures, never added together (after fest): `valueUsd` is what the tokens would
+ * cost at published API rates, on every session; `costUsd` is what someone is actually invoiced,
+ * and is null on a subscription. Blocks written before the split carried Claude Code's figure as
+ * `costUsd` with no `billing`; `parseDataBlock` reads that as value with unknown billing.
  */
 
 export const DATA_PREFIX = '<!-- sessionstat:data '
@@ -54,6 +60,11 @@ export interface DataSession {
   files: string[]
   filesEdited: number
   tokens: DataTokens
+  /** Who paid, as detected where the session ran. */
+  billing: Billing
+  /** List-price value of the tokens. Null when a model has no published rate. */
+  valueUsd: number | null
+  /** Actual spend: the value when billed per token, null on a subscription or when unknown. */
   costUsd: number | null
   errors: number
   interruptions: number
@@ -75,10 +86,16 @@ export interface DataTotals {
   filesEdited: number
   commits: number
   tokens: DataTokens
-  /** Sum over sessions that have a cost; null when none has one yet. */
+  /** Spend over per-token-billed sessions; null when there is none. */
   costUsd: number | null
-  /** Some sessions have a cost and some do not yet. */
+  /** Some sessions' spend is unknown (unknown billing, or billed on an unpriced model). */
   costPartial: boolean
+  /** Value over every priced session, subscription included; null when none is priced. */
+  valueUsd: number | null
+  /** Some sessions have no value (an unpriced model), so `valueUsd` is a floor. */
+  valuePartial: boolean
+  /** Sessions by billing mode. */
+  billing: Record<Billing, number>
   errors: number
   interruptions: number
   compactions: number
@@ -108,6 +125,7 @@ export interface SessionContext {
   repoRoot: string | null
   openedBeforePr: boolean
   commits: string[]
+  billing: Billing
 }
 
 export function toDataSession(stats: SessionStats, ctx: SessionContext): DataSession {
@@ -133,7 +151,9 @@ export function toDataSession(stats: SessionStats, ctx: SessionContext): DataSes
     files,
     filesEdited: files.length,
     tokens: { ...stats.tokens },
-    costUsd: stats.costUsd,
+    billing: ctx.billing,
+    valueUsd: stats.valueUsd,
+    costUsd: ctx.billing === 'api' ? stats.valueUsd : null,
     errors: stats.errors,
     interruptions: stats.interruptions,
     compactions: stats.compactions,
@@ -179,7 +199,9 @@ function sortSessions(sessions: DataSession[]): DataSession[] {
 
 export function computeTotals(sessions: DataSession[]): DataTotals {
   const sum = (f: (s: DataSession) => number) => sessions.reduce((n, s) => n + f(s), 0)
-  const priced = sessions.filter(s => s.costUsd !== null)
+  const valued = sessions.filter(s => s.valueUsd !== null)
+  const billed = sessions.filter(s => s.costUsd !== null)
+  const count = (b: Billing) => sessions.filter(s => s.billing === b).length
   const toolResults = sum(s => s.toolResults)
   const errors = sum(s => s.errors)
   return {
@@ -196,8 +218,11 @@ export function computeTotals(sessions: DataSession[]): DataTotals {
       cacheRead: sum(s => s.tokens.cacheRead),
       cacheWrite: sum(s => s.tokens.cacheWrite),
     },
-    costUsd: priced.length > 0 ? priced.reduce((n, s) => n + (s.costUsd ?? 0), 0) : null,
-    costPartial: priced.length > 0 && priced.length < sessions.length,
+    costUsd: billed.length > 0 ? billed.reduce((n, s) => n + (s.costUsd ?? 0), 0) : null,
+    costPartial: sessions.some(s => s.billing !== 'subscription' && s.costUsd === null),
+    valueUsd: valued.length > 0 ? valued.reduce((n, s) => n + (s.valueUsd ?? 0), 0) : null,
+    valuePartial: valued.length > 0 && valued.length < sessions.length,
+    billing: { subscription: count('subscription'), api: count('api'), unknown: count('unknown') },
     errors,
     interruptions: sum(s => s.interruptions),
     compactions: sum(s => s.compactions),
@@ -218,6 +243,12 @@ export function serializeDataBlock(data: DataBlock): string {
   return `${DATA_PREFIX}${json}${DATA_SUFFIX}`
 }
 
+/** A session from a block written before billing was recorded: its cost was only ever value. */
+function upgradeSession(s: DataSession): DataSession {
+  if (s.billing) return s
+  return { ...s, billing: 'unknown', valueUsd: s.costUsd ?? null, costUsd: null }
+}
+
 /** Read the data block back out of a comment body. Null if absent or unreadable. */
 export function parseDataBlock(body: string): DataBlock | null {
   const start = body.indexOf(DATA_PREFIX)
@@ -228,7 +259,7 @@ export function parseDataBlock(body: string): DataBlock | null {
   try {
     const parsed = JSON.parse(body.slice(from, end)) as DataBlock
     if (!parsed || parsed.v !== 1 || !Array.isArray(parsed.sessions)) return null
-    return parsed
+    return { ...parsed, sessions: parsed.sessions.map(upgradeSession) }
   } catch {
     return null
   }

@@ -2,14 +2,17 @@
 {{! Each section below is one #name ... /name block: delete a block to hide that section. }}
 {{! `sessionstat template vars` prints every field you can use. }}
 {{! The marker and the hidden data block are added for you; you do not need them here. }}
+{{! Cost is what was actually billed ("subscription" when a Claude plan covered it); API value }}
+{{! is what the same tokens cost at published API rates. They are never added together. }}
 {{! ---- Summary ---- }}
 ### 🤖 Claude Code session stats
 
 {{#totals}}
-**{{sessionCount}} {{sessionNoun}}** · {{duration}} · {{turns}} prompts · {{toolCalls}} tool calls · {{filesEdited}} files edited{{#cost}} · {{cost}}{{/cost}}
+**{{sessionCount}} {{sessionNoun}}** · {{duration}} · {{turns}} prompts · {{toolCalls}} tool calls · {{filesEdited}} files edited{{#hasCost}} · **Cost:** {{cost}}{{#costPartial}} (some sessions unknown){{/costPartial}}{{/hasCost}}{{#hasValue}} · **API value:** {{value}}{{#valuePartial}} (some sessions unpriced){{/valuePartial}}{{/hasValue}}
 {{/totals}}
 
 {{! ---- Sessions, split into build (before the PR) and follow-up (after it opened). ---- }}
+{{! Three narrow tables per group: who and when, the work and its cost, tokens. }}
 {{! Folded into a details element when there is more than one session. }}
 {{#multipleSessions}}
 <details>
@@ -21,31 +24,62 @@
 **Build** — before the PR was opened
 
 {{/hasFollowUp}}
-| Session | Author | Model | Started | Duration | Prompts | Tool calls | Files | Commits | Cost |
-|---|---|---|---|---|---|---|---|---|---|
+| Session | Author | Model | Started | Duration |
+|---|---|---|---|---|
 {{#buildSessions}}
-| `{{shortId}}` | {{author}} | {{model}} | {{startedAt}} | {{duration}} | {{turns}} | {{toolCalls}} | {{filesEdited}} | {{commitCount}} | {{cost}} |
+| `{{shortId}}` | {{author}} | {{model}} | {{startedAt}} | {{duration}} |
 {{/buildSessions}}
+
+| Session | Prompts | Tool calls | Files | Commits | Cost | API value |
+|---|--:|--:|--:|--:|--:|--:|
+{{#buildSessions}}
+| `{{shortId}}` | {{turns}} | {{toolCalls}} | {{filesEdited}} | {{commitCount}} | {{cost}} | {{value}} |
+{{/buildSessions}}
+{{#buildTotals}}
+| **Total** | **{{turns}}** | **{{toolCalls}}** | **{{filesEdited}}** | **{{commits}}** | **{{cost}}** | **{{value}}** |
+{{/buildTotals}}
+
+| Session | Input | Output | Cache read | Cache write |
+|---|--:|--:|--:|--:|
+{{#buildSessions}}
+| `{{shortId}}` | {{tokens.input}} | {{tokens.output}} | {{tokens.cacheRead}} | {{tokens.cacheWrite}} |
+{{/buildSessions}}
+{{#buildTotals}}
+| **Total** | **{{tokens.input}}** | **{{tokens.output}}** | **{{tokens.cacheRead}}** | **{{tokens.cacheWrite}}** |
+{{/buildTotals}}
 
 {{/hasBuild}}
 {{#hasFollowUp}}
 **Follow-up** — after the PR was opened ({{followUpTotals.sessionCount}} {{followUpTotals.sessionNoun}}, {{followUpTotals.duration}})
 
-| Session | Author | Model | Started | Duration | Prompts | Tool calls | Files | Commits | Cost |
-|---|---|---|---|---|---|---|---|---|---|
+| Session | Author | Model | Started | Duration |
+|---|---|---|---|---|
 {{#followUpSessions}}
-| `{{shortId}}` | {{author}} | {{model}} | {{startedAt}} | {{duration}} | {{turns}} | {{toolCalls}} | {{filesEdited}} | {{commitCount}} | {{cost}} |
+| `{{shortId}}` | {{author}} | {{model}} | {{startedAt}} | {{duration}} |
 {{/followUpSessions}}
+
+| Session | Prompts | Tool calls | Files | Commits | Cost | API value |
+|---|--:|--:|--:|--:|--:|--:|
+{{#followUpSessions}}
+| `{{shortId}}` | {{turns}} | {{toolCalls}} | {{filesEdited}} | {{commitCount}} | {{cost}} | {{value}} |
+{{/followUpSessions}}
+{{#followUpTotals}}
+| **Total** | **{{turns}}** | **{{toolCalls}}** | **{{filesEdited}}** | **{{commits}}** | **{{cost}}** | **{{value}}** |
+{{/followUpTotals}}
+
+| Session | Input | Output | Cache read | Cache write |
+|---|--:|--:|--:|--:|
+{{#followUpSessions}}
+| `{{shortId}}` | {{tokens.input}} | {{tokens.output}} | {{tokens.cacheRead}} | {{tokens.cacheWrite}} |
+{{/followUpSessions}}
+{{#followUpTotals}}
+| **Total** | **{{tokens.input}}** | **{{tokens.output}}** | **{{tokens.cacheRead}}** | **{{tokens.cacheWrite}}** |
+{{/followUpTotals}}
 
 {{/hasFollowUp}}
 {{#multipleSessions}}
 </details>
 {{/multipleSessions}}
-
-{{! ---- Tokens & cost ---- }}
-{{#totals}}
-**Tokens:** {{tokens.input}} in · {{tokens.output}} out · {{tokens.cacheRead}} cache read · {{tokens.cacheWrite}} cache write{{#hasCost}} · **Cost:** {{cost}}{{#costPartial}} (some sessions not yet priced){{/costPartial}}{{/hasCost}}
-{{/totals}}
 
 {{! ---- Quality ---- }}
 {{#totals}}

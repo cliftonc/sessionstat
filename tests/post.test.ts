@@ -5,7 +5,12 @@ import { updateConfig } from '../src/config.js'
 import { MARKER } from '../src/gh.js'
 import { postForBranch, resolveOpenedBeforePr } from '../src/post.js'
 import { recordSession } from '../src/sessions.js'
-import { buildData, parseDataBlock, serializeDataBlock } from '../src/template/data.js'
+import {
+  type DataSession,
+  buildData,
+  parseDataBlock,
+  serializeDataBlock,
+} from '../src/template/data.js'
 import { fakeGitHub } from './fake-gh.js'
 import { FIXTURES, fakeRunner, useTempHome } from './helpers.js'
 
@@ -189,7 +194,7 @@ describe('build or follow-up', () => {
 })
 
 /** A DataSession shaped like the local one, for seeding a comment's block. */
-function parseDataBlockFromLocal() {
+function parseDataBlockFromLocal(): DataSession {
   return {
     id: 'synthetic-session-0001',
     branch: 'feature/login',
@@ -207,6 +212,8 @@ function parseDataBlockFromLocal() {
     files: [],
     filesEdited: 0,
     tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    billing: 'unknown',
+    valueUsd: null,
     costUsd: null,
     errors: 0,
     interruptions: 0,

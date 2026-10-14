@@ -15,6 +15,7 @@ import { CanonicalErrorProcessor } from './error.js'
 import { isHumanPrompt } from './message-filters.js'
 import type { BaseMetricProcessor } from './metric-processor.js'
 import { CanonicalPerformanceProcessor } from './performance.js'
+import { sessionValueUsd } from './pricing.js'
 import { CanonicalQualityProcessor } from './quality.js'
 import { attributeTokens } from './token-attribution.js'
 import { getToolCapability } from './tool-capabilities.js'
@@ -44,8 +45,12 @@ export interface SessionStats {
   tools: Array<{ name: string; count: number }>
   filesEdited: string[]
   tokens: { input: number; output: number; cacheRead: number; cacheWrite: number }
-  /** Claude Code's own figure from its `cost-state` record. Null until it has written one. */
-  costUsd: number | null
+  /**
+   * List-price value of the session's tokens: Claude Code's own `cost-state` figure once it has
+   * written one, otherwise priced from the vendored rate table. Null when a model is unpriced.
+   * Value, not spend - whether anyone is invoiced depends on the billing mode.
+   */
+  valueUsd: number | null
   /** Tool results seen, and those that came back flagged `is_error`. */
   toolResults: number
   errors: number
@@ -223,7 +228,7 @@ export async function computeSessionStats(
       cacheRead: attribution.totals.cacheReadTokens,
       cacheWrite: attribution.totals.cacheCreationTokens,
     },
-    costUsd: session.providerTotals?.reportedCostUsd ?? null,
+    valueUsd: session.providerTotals?.reportedCostUsd ?? sessionValueUsd(session),
     toolResults: results.size,
     errors,
     errorSignals: raw.error?.error_count ?? 0,

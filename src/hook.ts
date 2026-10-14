@@ -1,3 +1,4 @@
+import { detectBilling } from './billing.js'
 import { hasDueChecks, pollerRunning, queueChecks } from './checks.js'
 import { isEnabledFor, loadConfig } from './config.js'
 import { getGitMetadata, isGitHubRemote } from './git.js'
@@ -125,6 +126,7 @@ async function handleSessionEvent(
     head: meta.commitHash,
     recordCommit: event === 'Stop' || event === 'SessionEnd',
     openedBeforePr,
+    billing: await detectBilling(),
     ended: event === 'SessionEnd',
     now: new Date(deps.clock()),
   })

@@ -14,7 +14,10 @@ export interface CommentView {
   generatedAt: string
   multipleSessions: boolean
   hasErrors: boolean
+  /** Some session has a known cost: spend, or a subscription. */
   hasCost: boolean
+  /** Some session has an API value. */
+  hasValue: boolean
   hasTests: boolean
   /** There are sessions from before the PR was opened / after it. */
   hasBuild: boolean
@@ -45,10 +48,19 @@ export interface TotalsView {
   filesEdited: number
   commits: number
   tokens: TokensView
-  /** Empty string when no session has a cost yet, so `{{#cost}}` hides it. */
+  /**
+   * Actual spend: `$1.23`, `subscription`, `$1.23 + subscription` when mixed, or `–` when
+   * unknown. Never includes the value of subscription sessions.
+   */
   cost: string
+  /** List-price value of every priced session, subscription included, or `–`. */
+  value: string
+  /** Some sessions have no value (an unpriced model), so `value` is a floor. */
+  valuePartial: boolean
+  /** Some sessions' spend is unknown, so `cost` is not the whole bill. */
   costPartial: boolean
   hasCost: boolean
+  hasValue: boolean
   hasTests: boolean
   errors: number
   interruptions: number
@@ -73,7 +85,11 @@ export interface SessionView {
   commits: Array<{ sha: string; short: string }>
   commitCount: number
   tokens: TokensView
+  billing: string
+  /** `$1.23` when billed per token, `subscription`, or `–` when unknown or unpriced. */
   cost: string
+  /** List-price value, or `–` when the model is unpriced. */
+  value: string
   errors: number
   interruptions: number
   compactions: number
@@ -109,6 +125,19 @@ export function formatCost(usd: number | null): string {
   return `$${usd.toFixed(2)}`
 }
 
+const NONE = '–'
+
+function sessionCost(s: DataSession): string {
+  if (s.billing === 'subscription') return 'subscription'
+  return s.costUsd === null ? NONE : formatCost(s.costUsd)
+}
+
+function totalCost(t: DataTotals): string {
+  const subscription = t.billing.subscription > 0
+  if (t.costUsd === null) return subscription ? 'subscription' : NONE
+  return subscription ? `${formatCost(t.costUsd)} + subscription` : formatCost(t.costUsd)
+}
+
 /** UTC, minute precision: a comment is read by people in many time zones. */
 export function formatTimestamp(date: Date | string): string {
   return `${new Date(date).toISOString().slice(0, 16).replace('T', ' ')} UTC`
@@ -140,7 +169,9 @@ function sessionView(s: DataSession): SessionView {
     commits: s.commits.map(sha => ({ sha, short: sha.slice(0, 7) })),
     commitCount: s.commits.length,
     tokens: tokensView(s.tokens),
-    cost: s.costUsd === null ? '–' : formatCost(s.costUsd),
+    billing: s.billing,
+    cost: sessionCost(s),
+    value: s.valueUsd === null ? NONE : formatCost(s.valueUsd),
     errors: s.errors,
     interruptions: s.interruptions,
     compactions: s.compactions,
@@ -152,7 +183,8 @@ function sessionView(s: DataSession): SessionView {
 }
 
 function totalsView(t: DataTotals): TotalsView {
-  const hasCost = t.costUsd !== null
+  const hasCost = t.costUsd !== null || t.billing.subscription > 0
+  const hasValue = t.valueUsd !== null
   return {
     sessionCount: t.sessions,
     sessionNoun: t.sessions === 1 ? 'session' : 'sessions',
@@ -162,9 +194,12 @@ function totalsView(t: DataTotals): TotalsView {
     filesEdited: t.filesEdited,
     commits: t.commits,
     tokens: tokensView(t.tokens),
-    cost: hasCost ? formatCost(t.costUsd) : '',
+    cost: totalCost(t),
+    value: hasValue ? formatCost(t.valueUsd) : NONE,
+    valuePartial: t.valuePartial,
     costPartial: t.costPartial,
     hasCost,
+    hasValue,
     hasTests: t.testRuns.passed + t.testRuns.failed > 0,
     errors: t.errors,
     interruptions: t.interruptions,
@@ -198,6 +233,7 @@ export function buildView(input: BuildViewInput): CommentView {
     multipleSessions: sessions.length > 1,
     hasErrors: totals.errors > 0,
     hasCost: totals.hasCost,
+    hasValue: totals.hasValue,
     hasTests: totals.hasTests,
     hasBuild: build.length > 0,
     hasFollowUp: followUp.length > 0,

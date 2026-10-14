@@ -11,13 +11,21 @@ anywhere except GitHub, and no prompt text is posted.
 ```
 ### 🤖 Claude Code session stats
 
-**1 session** · 2m · 2 prompts · 7 tool calls · 2 files edited · $3.41
+**1 session** · 2m · 2 prompts · 7 tool calls · 2 files edited · **Cost:** subscription · **API value:** $3.41
 
-| Session | Author | Model | Started | Duration | Prompts | Tool calls | Files | Commits | Cost |
-|---|---|---|---|---|---|---|---|---|---|
-| `syntheti` | alice | claude-opus-5-5 | 2026-10-01 09:00 UTC | 2m | 2 | 7 | 2 | 1 | $3.41 |
+| Session | Author | Model | Started | Duration |
+|---|---|---|---|---|
+| `syntheti` | alice | claude-opus-5-5 | 2026-10-01 09:00 UTC | 2m |
 
-**Tokens:** 1.2k in · 45k out · 1.2M cache read · 80k cache write · **Cost:** $3.41
+| Session | Prompts | Tool calls | Files | Commits | Cost | API value |
+|---|--:|--:|--:|--:|--:|--:|
+| `syntheti` | 2 | 7 | 2 | 1 | subscription | $3.41 |
+| **Total** | **2** | **7** | **2** | **1** | **subscription** | **$3.41** |
+
+| Session | Input | Output | Cache read | Cache write |
+|---|--:|--:|--:|--:|
+| `syntheti` | 1.2k | 45k | 1.2M | 80k |
+| **Total** | **1.2k** | **45k** | **1.2M** | **80k** |
 
 **Quality:** 86% tool success · tool errors: 1 · interruptions: 1 · compactions: 1 · tests: 1 passed, 1 failed
 ```
@@ -199,18 +207,30 @@ maths.
 | Variable | |
 |---|---|
 | `pr.number`, `pr.url`, `pr.branch`, `repo`, `branch`, `generatedAt` | Where and when |
-| `multipleSessions`, `hasCost`, `hasTests`, `hasErrors`, `hasBuild`, `hasFollowUp` | Flags for optional sections |
-| `totals` | `sessionCount`, `sessionNoun`, `duration`, `turns`, `toolCalls`, `filesEdited`, `commits`, `tokens.{input,output,cacheRead,cacheWrite}`, `cost`, `costPartial`, `errors`, `interruptions`, `compactions`, `testRuns.{passed,failed}`, `successRate` |
+| `multipleSessions`, `hasCost`, `hasValue`, `hasTests`, `hasErrors`, `hasBuild`, `hasFollowUp` | Flags for optional sections |
+| `totals` | `sessionCount`, `sessionNoun`, `duration`, `turns`, `toolCalls`, `filesEdited`, `commits`, `tokens.{input,output,cacheRead,cacheWrite}`, `cost`, `costPartial`, `value`, `valuePartial`, `hasCost`, `hasValue`, `errors`, `interruptions`, `compactions`, `testRuns.{passed,failed}`, `successRate` |
 | `buildTotals`, `followUpTotals` | The same, for each half |
-| `sessions[]`, `buildSessions[]`, `followUpSessions[]` | `id`, `shortId`, `author`, `model`, `startedAt`, `duration`, `phase`, `openedBeforePr`, `turns`, `toolCalls`, `tools[]{name,count}`, `filesEdited`, `commits[]{sha,short}`, `commitCount`, `tokens`, `cost`, `errors`, `interruptions`, `compactions`, `testRuns`, `successRate`, `processQuality`, `iterations` |
+| `sessions[]`, `buildSessions[]`, `followUpSessions[]` | `id`, `shortId`, `author`, `model`, `startedAt`, `duration`, `phase`, `openedBeforePr`, `turns`, `toolCalls`, `tools[]{name,count}`, `filesEdited`, `commits[]{sha,short}`, `commitCount`, `tokens`, `billing`, `cost`, `value`, `errors`, `interruptions`, `compactions`, `testRuns`, `successRate`, `processQuality`, `iterations` |
 
 What the numbers mean: **prompts** are messages you typed (sub-agent prompts excluded); **tool
 errors** are tool calls whose result came back as an error; **interruptions** are presses of
 Esc; **compactions** are context compactions, manual or automatic; **tests** are Bash commands
 that run a test suite (`pnpm test`, `vitest`, `pytest`, `go test`, …), passed if they exited
-zero; **cost** is Claude Code's own figure from the `cost-state` record it writes into the
-transcript, so a session that is still running may not have one yet. Tool success, process
+zero. Tool success, process
 quality and iterations are computed exactly as [GuideMode](https://guidemode.dev) computes them.
+
+There are two dollar figures, and they are never added together:
+
+- **API value** is what the session's tokens cost at Anthropic's published API rates. It is
+  Claude Code's own figure once it has written its end-of-session `cost-state` record, and until
+  then is priced per request from a rate table vendored into sessionstat (`pnpm update-prices`
+  refreshes it from [litellm](https://github.com/BerriAI/litellm)). A model with no published
+  rate shows `–`, never a guess.
+- **Cost** is what was actually billed. When the session ran on a Claude subscription (Pro, Max,
+  Team…) nobody is invoiced per token, so it shows `subscription`; when it was billed per token
+  (an API key, `ANTHROPIC_AUTH_TOKEN`, Bedrock, Vertex or Foundry) it equals the API value. The
+  billing mode is detected by the hook on the machine that ran the session, from its environment
+  and the logged-in account in `~/.claude.json`, and stored with the session.
 
 ## Configuration
 

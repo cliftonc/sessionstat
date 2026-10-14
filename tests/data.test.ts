@@ -29,6 +29,8 @@ function session(id: string, over: Partial<DataSession> = {}): DataSession {
     files: ['src/a.ts'],
     filesEdited: 1,
     tokens: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 },
+    billing: 'api',
+    valueUsd: 1.5,
     costUsd: 1.5,
     errors: 1,
     interruptions: 0,
@@ -45,7 +47,10 @@ function session(id: string, over: Partial<DataSession> = {}): DataSession {
 
 describe('the data block', () => {
   it('round-trips', () => {
-    const data = buildData([session('s1'), session('s2', { costUsd: null })], 'feature/x')
+    const data = buildData(
+      [session('s1'), session('s2', { billing: 'subscription', costUsd: null })],
+      'feature/x'
+    )
     const block = serializeDataBlock(data)
     expect(block.startsWith('<!-- sessionstat:data {"v":1,')).toBe(true)
     expect(parseDataBlock(`${MARKER}\n# hi\n\n${block}\n`)).toEqual(data)
@@ -73,19 +78,38 @@ describe('the data block', () => {
     expect(parseDataBlock('<!-- sessionstat:data {"v":2,"sessions":[]} -->')).toBeNull()
   })
 
-  it('totals raw numbers, with cost only over priced sessions', () => {
+  it('totals raw numbers, with cost only over billed sessions and value over priced ones', () => {
     const totals = computeTotals([
       session('s1', { files: ['a', 'b'], commits: ['c1'] }),
-      session('s2', { costUsd: null, files: ['b'], commits: ['c1', 'c2'] }),
+      session('s2', {
+        billing: 'subscription',
+        costUsd: null,
+        valueUsd: 2,
+        files: ['b'],
+        commits: ['c1', 'c2'],
+      }),
+      session('s3', { billing: 'unknown', costUsd: null, valueUsd: null, files: [] }),
     ])
     expect(totals).toMatchObject({
-      sessions: 2,
-      turns: 6,
+      sessions: 3,
+      turns: 9,
       filesEdited: 2,
       commits: 2,
       costUsd: 1.5,
-      costPartial: true,
+      valueUsd: 3.5,
+      valuePartial: true,
+      billing: { api: 1, subscription: 1, unknown: 1 },
       successRate: 90,
+    })
+  })
+
+  it('reads a block written before billing was recorded: its cost was value', () => {
+    const { billing: _, valueUsd: __, ...old } = session('old', { costUsd: 4.2 })
+    const block = `<!-- sessionstat:data ${JSON.stringify({ v: 1, branch: 'b', sessions: [old] })} -->`
+    expect(parseDataBlock(block)?.sessions[0]).toMatchObject({
+      billing: 'unknown',
+      valueUsd: 4.2,
+      costUsd: null,
     })
   })
 })
