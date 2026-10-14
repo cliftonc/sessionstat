@@ -59,10 +59,22 @@ ${commands}
 
 ## Install scopes
 
-- **Global** (default): hooks go in \`~/.claude/settings.json\` and cover every repository.
-- **One repository**: \`sessionstat setup --project [path]\` writes \`<repo>/.claude/settings.local.json\`
-  and copies the default template to \`<repo>/.sessionstat.md\` if there is none.
-- Installed in both, each event fires twice; sessionstat de-duplicates them, and setup warns.
+- **One repository** (the default): \`sessionstat setup [path]\` installs into the repository
+  containing \`path\` (default: the working directory). Hooks go in
+  \`<repo>/.claude/settings.local.json\`, and the default template is copied to
+  \`<repo>/.sessionstat.md\` if there is none. Run outside a git repository, setup refuses
+  rather than installing globally.
+- **Global**, only when asked: \`sessionstat setup --global\` puts the hooks in
+  \`~/.claude/settings.json\`, so they run in **every** repository. Never suggest it unless
+  the user wants that.
+- \`sessionstat uninstall\` mirrors setup: this repository by default, \`--global\` for the
+  global hooks. \`sessionstat status\` shows which scopes cover the current repository and
+  flags a global install.
+- Installed in both, each event fires twice; sessionstat de-duplicates them, and setup warns
+  and suggests \`sessionstat uninstall --global\` for a per-repository-only setup.
+- \`--project\` is a deprecated alias for the default and prints a warning.
+- \`enable\` / \`disable --global\` are different: an on/off switch for every repository where
+  sessionstat is installed. They never install or remove hooks.
 - The skill is always global (\`~/.claude/skills/sessionstat/SKILL.md\`). Session scratch, the
   check queue, logs and config always live in \`~/.sessionstat/\`.
 
@@ -105,8 +117,9 @@ that fails to parse is logged and the default is used instead.
 
 ## Troubleshooting: "no stats comment on my PR"
 
-1. \`sessionstat status\` — is it installed for this scope, is \`gh\` logged in, is the repo
-   disabled, which sessions are recorded for this branch, which checks are queued, last error.
+1. \`sessionstat status\` — is it installed for this repository (or globally), is \`gh\`
+   logged in, is the repo disabled, which sessions are recorded for this branch, which checks
+   are queued, last error.
 2. \`gh auth status\` — sessionstat posts as this user; it needs \`repo\` access to comment.
 3. \`sessionstat logs\` (or \`--errors\`) — what the background workers did.
 4. \`sessionstat show\` — render the comment locally; if this is empty, no session was recorded

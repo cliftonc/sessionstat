@@ -36,8 +36,20 @@ export interface SetupDeps {
 }
 
 export interface SetupOptions {
-  /** `true` for the current directory's repository, or a path inside the repository. */
-  project?: string | boolean
+  /** A path inside the repository to install into. Defaults to the working directory. */
+  path?: string
+  /** Install into the user-level settings, so it runs in every repository. Never the default. */
+  global?: boolean
+}
+
+export const NOT_IN_REPO =
+  'Not inside a git repository. Run it in the repo you want, or use --global to install everywhere'
+
+/** One plain sentence saying where the hooks now run. */
+export function scopeSentence(repoRoot: string | null): string {
+  return repoRoot
+    ? `Installed for ${repoRoot} only`
+    : 'Installed globally: runs in every repository'
 }
 
 export interface SetupResult {
@@ -99,7 +111,7 @@ export async function resolveHookCommand(
   return { command: 'sessionstat hook', ok: false, detail: 'sessionstat is not on PATH' }
 }
 
-async function repoRootOf(run: CommandRunner, dir: string): Promise<string | null> {
+export async function repoRootOf(run: CommandRunner, dir: string): Promise<string | null> {
   const result = await run('git', ['rev-parse', '--show-toplevel'], { cwd: dir, timeoutMs: 5000 })
   return result.code === 0 ? result.stdout.trim() : null
 }
@@ -153,6 +165,28 @@ export async function runSetup(options: SetupOptions, deps: SetupDeps): Promise<
   const cwd = deps.cwd ?? process.cwd()
   const out = deps.out
 
+  // ── Where: decided first, so a bad scope changes nothing ─────────────────
+  // Per repository unless --global is given. Outside a repository that is an error, never a
+  // quiet fall-back to a global install.
+  const refuse = (message: string): SetupResult => {
+    out(`sessionstat: ${message}`)
+    return { ok: false, checks, settingsPath: '', templatePath: '', hookCommand: '' }
+  }
+  if (options.global && options.path) {
+    return refuse('--global installs for every repository, so it takes no path')
+  }
+  let repoRoot: string | null = null
+  if (!options.global) {
+    const dir = resolve(cwd, options.path ?? '.')
+    repoRoot = await repoRootOf(deps.run, dir)
+    if (!repoRoot && (await deps.run('git', ['--version'], { timeoutMs: 5000 })).code !== 0) {
+      return refuse('git is not on PATH, so the repository cannot be found. Install git first')
+    }
+    if (!repoRoot) {
+      return refuse(options.path ? `${dir}: ${NOT_IN_REPO}` : NOT_IN_REPO)
+    }
+  }
+
   // ── Tools ────────────────────────────────────────────────────────────────
   const git = await deps.run('git', ['--version'], { timeoutMs: 5000 })
   checks.push(
@@ -196,37 +230,18 @@ export async function runSetup(options: SetupOptions, deps: SetupDeps): Promise<
         }
   )
 
-  // ── Where ────────────────────────────────────────────────────────────────
-  let repoRoot: string | null = null
-  if (options.project) {
-    const dir = resolve(cwd, typeof options.project === 'string' ? options.project : '.')
-    repoRoot = await repoRootOf(deps.run, dir)
-    if (!repoRoot) {
-      checks.push({
-        ok: false,
-        label: `${dir} is not inside a git repository`,
-        fix: 'Run sessionstat setup --project from inside the repository',
-      })
-      printChecklist(out, checks)
-      return {
-        ok: false,
-        checks,
-        settingsPath: '',
-        templatePath: '',
-        hookCommand: hook.command,
-      }
-    }
-  }
   const settingsPath = repoRoot ? projectSettingsPath(repoRoot) : paths.userSettings()
 
   // ── Hooks: write, then read back ─────────────────────────────────────────
   let before: Record<string, unknown> | null = null
+  let installed = false
   try {
     before = await readSettings(settingsPath)
     await installHooks(settingsPath, hook.command)
     const after = await readSettings(settingsPath)
     const events = await installedEvents(settingsPath)
     const missing = HOOK_EVENTS.filter(e => !events.includes(e))
+    installed = missing.length === 0
     checks.push(
       missing.length === 0
         ? { ok: true, label: `Hooks installed in ${settingsPath}`, detail: HOOK_EVENTS.join(', ') }
@@ -260,9 +275,10 @@ export async function runSetup(options: SetupOptions, deps: SetupDeps): Promise<
       checks.push({
         ok: true,
         warn: true,
-        label: `Also installed globally (${paths.userSettings()})`,
-        detail: 'Each event fires twice; sessionstat de-duplicates them, but one scope is enough',
-        fix: 'sessionstat uninstall   # to keep only this project install',
+        label: `Also installed globally (${paths.userSettings()}): runs in every repository`,
+        detail:
+          'Here each event fires twice; sessionstat de-duplicates them, but one scope is enough',
+        fix: 'sessionstat uninstall --global   # if you only want it per repository',
       })
     }
   } else {
@@ -273,7 +289,7 @@ export async function runSetup(options: SetupOptions, deps: SetupDeps): Promise<
         warn: true,
         label: `Also installed in ${projectSettingsPath(repo)}`,
         detail: 'Each event fires twice there; sessionstat de-duplicates them',
-        fix: `sessionstat uninstall --project ${shellQuote(repo)}`,
+        fix: `sessionstat uninstall ${shellQuote(repo)}   # the global install covers it`,
       })
     }
   }
@@ -305,12 +321,20 @@ export async function runSetup(options: SetupOptions, deps: SetupDeps): Promise<
 
   await mkdir(paths.sessions(), { recursive: true, mode: 0o700 })
 
-  printChecklist(out, checks)
+  printChecklist(
+    out,
+    checks,
+    installed ? scopeSentence(repoRoot) : `Not installed (${settingsPath} was not updated)`
+  )
   const ok = checks.every(c => c.ok)
   return { ok, checks, settingsPath, templatePath, hookCommand: hook.command }
 }
 
-export function printChecklist(out: (line: string) => void, checks: CheckLine[]): void {
+export function printChecklist(
+  out: (line: string) => void,
+  checks: CheckLine[],
+  scope: string
+): void {
   out('')
   out('sessionstat setup')
   out('')
@@ -322,6 +346,7 @@ export function printChecklist(out: (line: string) => void, checks: CheckLine[])
   }
   const failed = checks.filter(c => !c.ok).length
   out('')
+  out(`  ${scope}.`)
   out(
     failed === 0
       ? '  All set. Stats will be posted to the PR for each branch you work on.'

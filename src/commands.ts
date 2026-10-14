@@ -14,20 +14,21 @@ export interface CommandDoc {
 export const COMMANDS: CommandDoc[] = [
   {
     name: 'setup',
-    usage: 'sessionstat setup [--project [path]]',
+    usage: 'sessionstat setup [path] [--global]',
     summary:
-      'Install the Claude Code hooks (globally, or into one repository with --project), the default template and the Claude skill, and check gh, git and the hook command',
+      'Install the Claude Code hooks into the repository containing path (default: here) — or into every repository only with --global — plus the default template and the Claude skill, and check gh, git and the hook command',
   },
   {
     name: 'uninstall',
-    usage: 'sessionstat uninstall [--project [path]]',
-    summary: 'Remove the hooks from that scope; the skill goes too once no scope has hooks left',
+    usage: 'sessionstat uninstall [path] [--global]',
+    summary:
+      'Remove the hooks from the repository containing path (default: here), or the global hooks with --global; the skill goes too once no scope has hooks left',
   },
   {
     name: 'status',
     usage: 'sessionstat status',
     summary:
-      'Where it is installed, gh login, the template in effect, recorded sessions, queued PR checks and the last error',
+      'Which install scopes cover this repository (and whether a global install runs everywhere), gh login, the template in effect, recorded sessions, queued PR checks and the last error',
   },
   {
     name: 'show',
@@ -54,13 +55,14 @@ export const COMMANDS: CommandDoc[] = [
   {
     name: 'enable',
     usage: 'sessionstat enable [--global]',
-    summary: 'Turn sessionstat back on for this repository (or everywhere with --global)',
+    summary:
+      'Turn sessionstat back on for this repository (or everywhere it is installed with --global); this is an on/off switch, not an install',
   },
   {
     name: 'disable',
     usage: 'sessionstat disable [--global]',
     summary:
-      'Stop recording and posting for this repository (or everywhere with --global), without uninstalling',
+      'Stop recording and posting for this repository (or everywhere it is installed with --global), without uninstalling',
   },
   {
     name: 'config',

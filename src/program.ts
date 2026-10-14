@@ -1,7 +1,7 @@
 import { writeFile } from 'node:fs/promises'
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { Command } from 'commander'
+import { Command, Option } from 'commander'
 import pkg from '../package.json' with { type: 'json' }
 import { commandDoc } from './commands.js'
 import { isEnabledFor, loadConfig, updateConfig } from './config.js'
@@ -36,6 +36,11 @@ const defaultDeps: ProgramDeps = {
   setExitCode: code => {
     process.exitCode = code
   },
+}
+
+interface ScopeFlags {
+  global?: boolean
+  project?: string | boolean
 }
 
 interface ViewOptions {
@@ -102,16 +107,53 @@ export function buildProgram(overrides: Partial<ProgramDeps> = {}): Command {
     deps.setExitCode(1)
   }
 
+  /**
+   * `--project [path]` was how you asked for a per-repository install before that became the
+   * default. Kept, hidden, as an alias for it so existing scripts and docs keep working.
+   */
+  const scopeArgs = (
+    command: string,
+    given: string | undefined,
+    opts: ScopeFlags
+  ): { path?: string; global?: boolean } | null => {
+    let path = given
+    if (opts.project !== undefined) {
+      deps.err(
+        `sessionstat: --project is deprecated: per-repository is now the default (sessionstat ${command} [path])`
+      )
+      if (opts.global) {
+        fail(new Error('--project and --global are different scopes; pick one'))
+        return null
+      }
+      if (typeof opts.project === 'string') {
+        if (path && path !== opts.project) {
+          fail(new Error('Give the repository path once, not as both [path] and --project'))
+          return null
+        }
+        path = opts.project
+      }
+    }
+    return { path, global: opts.global }
+  }
+  const projectAlias = () =>
+    new Option('--project [path]', 'deprecated: per-repository is the default').hideHelp()
+
   program
     .command('setup')
     .description(commandDoc('setup'))
-    .option('--project [path]', 'install into this repository instead of globally')
-    .action(async (opts: { project?: string | boolean }) => {
+    .argument('[path]', 'a path inside the repository to install into (default: here)')
+    .option('--global', 'install for every repository instead (~/.claude/settings.json)')
+    .addOption(projectAlias())
+    .action(async (path: string | undefined, opts: ScopeFlags) => {
       try {
-        const result = await runSetup(
-          { project: opts.project },
-          { run: deps.run, out: deps.out, version: VERSION, cwd: deps.cwd() }
-        )
+        const scope = scopeArgs('setup', path, opts)
+        if (!scope) return
+        const result = await runSetup(scope, {
+          run: deps.run,
+          out: deps.out,
+          version: VERSION,
+          cwd: deps.cwd(),
+        })
         if (!result.ok) deps.setExitCode(1)
       } catch (err) {
         fail(err)
@@ -121,13 +163,15 @@ export function buildProgram(overrides: Partial<ProgramDeps> = {}): Command {
   program
     .command('uninstall')
     .description(commandDoc('uninstall'))
-    .option('--project [path]', 'remove from this repository instead of globally')
-    .action(async (opts: { project?: string | boolean }) => {
+    .argument('[path]', 'a path inside the repository to remove it from (default: here)')
+    .option('--global', 'remove the global hooks, the ones that run in every repository')
+    .addOption(projectAlias())
+    .action(async (path: string | undefined, opts: ScopeFlags) => {
       try {
-        await runUninstall(
-          { project: opts.project },
-          { run: deps.run, out: deps.out, cwd: deps.cwd() }
-        )
+        const scope = scopeArgs('uninstall', path, opts)
+        if (!scope) return
+        const result = await runUninstall(scope, { run: deps.run, out: deps.out, cwd: deps.cwd() })
+        if (!result.ok) deps.setExitCode(1)
       } catch (err) {
         fail(err)
       }
@@ -264,7 +308,7 @@ export function buildProgram(overrides: Partial<ProgramDeps> = {}): Command {
     program
       .command(name)
       .description(commandDoc(name))
-      .option('--global', 'everywhere, not just this repository')
+      .option('--global', 'everywhere it is installed, not just this repository')
       .action(async (opts: { global?: boolean }) => {
         try {
           const config = await loadConfig()

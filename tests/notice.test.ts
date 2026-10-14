@@ -84,25 +84,32 @@ describe('the start-of-session notice', () => {
     expect(Date.now() - started).toBeLessThan(2000)
   })
 
-  it('says nothing outside a GitHub repository', async () => {
+  it('says nothing outside a git repository', async () => {
     expect(
       await noticeFor(
         join(env.home, 'nowhere'),
         github(() => PR)
       )
     ).toBeNull()
+  })
+
+  it('says why nothing will be posted in a repository without a GitHub remote', async () => {
     expect(
       await noticeFor(
         repo,
         github(() => PR, 'https://gitlab.com/acme/app')
       )
-    ).toBeNull()
+    ).toBe(
+      "sessionstat: stats for this session won't be posted: this repository's remote is not on GitHub"
+    )
     expect(
       await noticeFor(
         repo,
         github(() => PR, null)
       )
-    ).toBeNull()
+    ).toBe(
+      "sessionstat: stats for this session won't be posted until this repository has a GitHub remote"
+    )
   })
 
   it('can be quietened with notice: false', async () => {

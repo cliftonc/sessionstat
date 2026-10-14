@@ -106,7 +106,7 @@ async function handleSessionEvent(
     const lookup = await startLookup(meta, config, deps.run, deps.noticeTimeoutMs).catch(() => null)
     if (lookup?.status === 'found') openedBeforePr = true
     else if (lookup?.status === 'none') openedBeforePr = false
-    const notice = noticeText(lookup, meta.branch, config)
+    const notice = noticeText(lookup, meta, config)
     if (notice) {
       result.notice = notice
       deps.write(noticeJson(notice))

@@ -3,7 +3,7 @@ import { loadConfig, updateConfig } from './config.js'
 import { paths, projectSettingsPath } from './paths.js'
 import type { CommandRunner } from './runner.js'
 import { hasHooksInstalled, removeHooks } from './settings.js'
-import { projectInstallsWithHooks } from './setup.js'
+import { projectInstallsWithHooks, repoRootOf } from './setup.js'
 import { removeSkill } from './skill.js'
 
 /**
@@ -13,8 +13,14 @@ import { removeSkill } from './skill.js'
  */
 
 export interface UninstallOptions {
-  project?: string | boolean
+  /** A path inside the repository to uninstall from. Defaults to the working directory. */
+  path?: string
+  /** Remove the user-level hooks, the ones that run in every repository. */
+  global?: boolean
 }
+
+export const NOT_IN_REPO_UNINSTALL =
+  'Not inside a git repository. Run it in the repo to uninstall from, or use --global for the global hooks'
 
 export interface UninstallDeps {
   run: CommandRunner
@@ -26,6 +32,8 @@ export interface UninstallResult {
   removedFrom: string[]
   skillRemoved: boolean
   stillInstalled: string[]
+  /** False when the scope could not be resolved (outside a repository without --global). */
+  ok: boolean
 }
 
 export async function runUninstall(
@@ -35,6 +43,7 @@ export async function runUninstall(
   const out = deps.out
   const cwd = deps.cwd ?? process.cwd()
   const removedFrom: string[] = []
+  let scopeRoot = ''
 
   const tryRemove = async (path: string) => {
     try {
@@ -44,26 +53,36 @@ export async function runUninstall(
     }
   }
 
-  if (options.project) {
-    const dir = resolve(cwd, typeof options.project === 'string' ? options.project : '.')
-    const top = await deps.run('git', ['rev-parse', '--show-toplevel'], {
-      cwd: dir,
-      timeoutMs: 5000,
-    })
-    const repoRoot = top.code === 0 ? top.stdout.trim() : dir
+  if (options.global && options.path) {
+    out('sessionstat: --global removes the hooks for every repository, so it takes no path')
+    return { ok: false, removedFrom, skillRemoved: false, stillInstalled: [] }
+  }
+
+  if (!options.global) {
+    const dir = resolve(cwd, options.path ?? '.')
+    const config = await loadConfig()
+    // A recorded install whose repository has since lost its .git can still be cleaned up.
+    const repoRoot =
+      (await repoRootOf(deps.run, dir)) ?? (config.projectInstalls?.includes(dir) ? dir : null)
+    if (!repoRoot) {
+      out(`sessionstat: ${options.path ? `${dir}: ` : ''}${NOT_IN_REPO_UNINSTALL}`)
+      return { ok: false, removedFrom, skillRemoved: false, stillInstalled: [] }
+    }
     await tryRemove(projectSettingsPath(repoRoot))
     await tryRemove(join(repoRoot, '.claude', 'settings.json'))
-    const config = await loadConfig()
     await updateConfig({
       projectInstalls: (config.projectInstalls ?? []).filter(r => r !== repoRoot),
     })
+    scopeRoot = repoRoot
   } else {
     await tryRemove(paths.userSettings())
     await tryRemove(paths.legacyUserSettings())
   }
 
+  const scope = options.global ? 'the global install' : `the install for ${scopeRoot}`
   for (const path of removedFrom) out(`✓ Removed sessionstat hooks from ${path}`)
-  if (removedFrom.length === 0) out('  No sessionstat hooks found in that scope.')
+  if (removedFrom.length > 0) out(`  Removed ${scope}.`)
+  else out(`  No sessionstat hooks found for ${options.global ? 'the global scope' : scopeRoot}.`)
 
   const stillInstalled: string[] = []
   if (await hasHooksInstalled(paths.userSettings())) stillInstalled.push(paths.userSettings())
@@ -72,6 +91,14 @@ export async function runUninstall(
   }
 
   let skillRemoved = false
+  const globalLeft = stillInstalled.includes(paths.userSettings())
+  if (!options.global && globalLeft) {
+    out(
+      `! The global install remains (${paths.userSettings()}): it still runs in every repository,`
+    )
+    out('  this one included. sessionstat uninstall --global removes it.')
+  }
+
   if (stillInstalled.length === 0) {
     skillRemoved = await removeSkill()
     if (skillRemoved) out(`✓ Removed the Claude skill at ${paths.skillDir()}`)
@@ -84,5 +111,5 @@ export async function runUninstall(
   out(
     `  Templates, recorded sessions and logs in ${paths.homeTemplate().replace(/\/template\.md$/, '')} are kept.`
   )
-  return { removedFrom, skillRemoved, stillInstalled }
+  return { ok: true, removedFrom, skillRemoved, stillInstalled }
 }

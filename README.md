@@ -27,31 +27,84 @@ anywhere except GitHub, and no prompt text is posted.
 Requires Node.js 24 or later, `git`, and the [GitHub CLI](https://cli.github.com/), logged in.
 
 ```bash
-npm install -g sessionstat
+npm install -g sessionstat         # or, from a checkout: pnpm install && pnpm build && pnpm link --global
 brew install gh && gh auth login   # if you do not have gh yet
-sessionstat setup
+
+cd path/to/your/repo
+sessionstat setup                  # this repository only; repeat in each repository you want
+```
+
+**sessionstat is per repository.** `sessionstat setup [path]` installs into the repository
+containing `path` (default: the current directory) and nowhere else, so run it in each
+repository whose PRs should get a stats comment. Outside a git repository it refuses rather than
+falling back to a global install:
+
+```
+sessionstat: Not inside a git repository. Run it in the repo you want, or use --global to install everywhere
 ```
 
 `setup` checks that `git` and `gh` are installed, that `gh` is logged in and that the hook
 command resolves; it writes the hooks and reads the settings back to confirm both that they are
-there and that your own hooks are untouched; it copies the default template for you to edit;
-it installs a Claude Code skill so Claude can explain and configure sessionstat for you; and it
-ends with a ✓/✗ checklist. If `gh` is missing or logged out it prints the fix and exits non-zero,
-but the hooks are installed anyway.
+there and that your own hooks are untouched; it copies the default template for you to edit; it
+installs a Claude Code skill so Claude can explain and configure sessionstat for you; and it ends
+with a ✓/✗ checklist and one line saying where it installed (`Installed for /path/to/repo
+only.`). If `gh` is missing or logged out it prints the fix and exits non-zero, but the hooks
+are installed anyway.
 
-### Global or one repository
+### Every repository: `--global`, only if you mean it
 
 ```bash
-sessionstat setup                    # ~/.claude/settings.json: every repository
-sessionstat setup --project [path]   # <repo>/.claude/settings.local.json: one repository
+sessionstat setup --global
 ```
 
-A project install copies the default template to `<repo>/.sessionstat.md` (never over an
-existing one) instead of `~/.sessionstat/template.md`. Installed in both places, each event
-fires twice; sessionstat de-duplicates them, and setup warns you. `sessionstat uninstall
-[--project [path]]` removes the hooks from that scope and nothing else. The skill
-(`~/.claude/skills/sessionstat/SKILL.md`) is always global, and is removed once no scope has
-hooks left. Session scratch, the check queue, config and logs always live in `~/.sessionstat/`.
+> **Warning:** a global install records **every** Claude Code session in **every** git
+> repository on this machine, and posts stats to the PR of any of them that has one: work,
+> personal and client repositories alike. Prefer `sessionstat setup` in the repositories you
+> choose. `sessionstat status` always says when a global install is active.
+
+Setup prints `Installed globally: runs in every repository.` for this scope. To keep it but
+silence one repository, `sessionstat disable` in that repository.
+
+### Where things live
+
+| | Per repository (default) | Global (`--global`) |
+|---|---|---|
+| Hooks | `<repo>/.claude/settings.local.json` | `~/.claude/settings.json` |
+| Template copied by setup | `<repo>/.sessionstat.md` | `~/.sessionstat/template.md` |
+| Claude skill | `~/.claude/skills/sessionstat/SKILL.md` (always global) | the same |
+| Sessions, check queue, config, logs | `~/.sessionstat/` | the same |
+
+`settings.local.json` is Claude Code's personal settings file for a repository, meant to stay
+out of git, so a per-repository install is yours alone (check it is in your `.gitignore` if
+Claude Code did not create it first). The template never overwrites an existing one;
+`<repo>/.sessionstat.md` *can* be committed if your team wants to share it. The skill is
+documentation for Claude, so it is always global, and it is removed once no scope has hooks
+left.
+
+Installed in both scopes, each event fires twice; sessionstat de-duplicates them, and `setup`
+warns you and suggests `sessionstat uninstall --global` if you only want it per repository.
+`--project [path]`, from before per-repository was the default, still works as a hidden,
+deprecated alias for it.
+
+### Uninstall
+
+```bash
+sessionstat uninstall            # this repository's hooks (or: sessionstat uninstall path/to/repo)
+sessionstat uninstall --global   # the global hooks
+```
+
+Each removes the hooks from that scope and nothing else, and says if another scope still has
+them. Templates, recorded sessions and logs are kept.
+
+### Moving from the old global default
+
+Earlier versions installed globally by default. To switch to per repository:
+
+```bash
+sessionstat status               # "! global install: runs in every repository" if you have one
+sessionstat uninstall --global
+cd path/to/your/repo && sessionstat setup   # in each repository you want
+```
 
 ## How it works
 
@@ -82,7 +135,10 @@ hooks left. Session scratch, the check queue, config and logs always live in `~/
 At the start of a session in a GitHub repository, Claude Code shows a notice: *sessionstat:
 stats for this session will be added to PR #12 for feature/x*, or the reason it will not be
 (`gh auth login`). The PR lookup behind it has a 1.5 second timeout, after which a generic line
-is shown. `sessionstat config notice off` hides it.
+is shown. In a git repository with no GitHub remote it says so instead: *sessionstat: stats for
+this session won't be posted until this repository has a GitHub remote* (or, for a remote
+elsewhere, *…this repository's remote is not on GitHub*). `sessionstat config notice off` hides
+it.
 
 ### The data block
 
@@ -106,14 +162,14 @@ after it was opened: responding to review). The default template shows them as t
 
 | Command | |
 |---|---|
-| `sessionstat setup [--project [path]]` | Install hooks, template and skill; check everything |
-| `sessionstat uninstall [--project [path]]` | Remove the hooks from that scope |
-| `sessionstat status` | Where it is installed, gh login, template in effect, sessions, queued checks, last error |
+| `sessionstat setup [path] [--global]` | Install hooks (this repository, or everywhere with `--global`), template and skill; check everything |
+| `sessionstat uninstall [path] [--global]` | Remove the hooks from this repository, or the global ones |
+| `sessionstat status` | Which scopes cover this repository, gh login, template in effect, sessions, queued checks, last error |
 | `sessionstat show [--all] [--transcript <file...>] [--no-pr]` | Print the comment without posting |
 | `sessionstat post [--force]` | Post or update the comment now |
 | `sessionstat template init [--repo] [--force]` | Write the default template out to edit |
 | `sessionstat template vars [--all] [--transcript <file...>] [--no-pr]` | Print the template's data as JSON |
-| `sessionstat enable` / `disable [--global]` | Turn it on or off for this repository, or everywhere |
+| `sessionstat enable` / `disable [--global]` | Turn it on or off for this repository, or everywhere it is installed (a switch, not an install) |
 | `sessionstat config [notice on\|off]` | Show settings, or toggle the start-of-session notice |
 | `sessionstat logs [-n <lines>] [--errors]` | The end of `~/.sessionstat/sessionstat.log` |
 | `sessionstat hook` | Internal: what the hooks run |
@@ -162,7 +218,7 @@ quality and iterations are computed exactly as [GuideMode](https://guidemode.dev
 | Key | Default | |
 |---|---|---|
 | `notice` | `true` | Show the start-of-session notice |
-| `enabled` | `true` | `false` turns sessionstat off everywhere |
+| `enabled` | `true` | `false` turns sessionstat off everywhere it is installed |
 | `disabledRepos` | `[]` | Repository roots where it is off |
 | `projectInstalls` | `[]` | Repositories with a project-scope install (kept by setup) |
 
@@ -170,7 +226,7 @@ quality and iterations are computed exactly as [GuideMode](https://guidemode.dev
 
 No comment on your PR?
 
-- `sessionstat status`: installed? `gh` logged in? repository disabled? sessions recorded on
+- `sessionstat status`: installed for this repository (or globally)? `gh` logged in? repository disabled? sessions recorded on
   this branch? checks queued? last error?
 - `gh auth status`: sessionstat comments as this user.
 - `sessionstat logs --errors`: what the background workers did.

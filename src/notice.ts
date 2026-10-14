@@ -27,10 +27,19 @@ export async function startLookup(
 /** The line to show for a lookup. Null when the notice is off or there is nothing to say. */
 export function noticeText(
   lookup: PrLookup | null,
-  branch: string | null,
+  meta: GitMetadata,
   config: SessionstatConfig
 ): string | null {
-  if (config.notice === false || !lookup || !branch) return null
+  if (config.notice === false) return null
+  // A git repository with no GitHub remote: say why nothing will be posted, rather than staying
+  // silent and leaving the user to wonder whether sessionstat is installed at all.
+  if (meta.toplevel && isEnabledFor(config, meta.toplevel) && !isGitHubRemote(meta.remoteUrl)) {
+    return meta.remoteUrl
+      ? "sessionstat: stats for this session won't be posted: this repository's remote is not on GitHub"
+      : "sessionstat: stats for this session won't be posted until this repository has a GitHub remote"
+  }
+  const branch = meta.branch
+  if (!lookup || !branch) return null
   switch (lookup.status) {
     case 'found':
       return `sessionstat: stats for this session will be added to PR #${lookup.pr.number} for ${branch} (${lookup.pr.url})`
@@ -52,7 +61,7 @@ export async function noticeFor(
   const config = await loadConfig()
   if (config.notice === false) return null
   const meta = await getGitMetadata(cwd, run)
-  return noticeText(await startLookup(meta, config, run, timeoutMs), meta.branch, config)
+  return noticeText(await startLookup(meta, config, run, timeoutMs), meta, config)
 }
 
 /** The JSON Claude Code reads from a SessionStart hook's stdout. */
