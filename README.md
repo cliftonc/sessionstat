@@ -8,27 +8,27 @@ sessions that built it: duration, prompts, tool calls, files edited, tokens, cos
 interruptions, compactions and test runs. It posts with your own `gh` login. Nothing is sent
 anywhere except GitHub, and no prompt text is posted.
 
-```
-### 🤖 Claude Code session stats
+What the comment looks like:
 
-**1 session** · 2m · 2 prompts · 7 tool calls · 2 files edited · **Cost:** subscription · **API value:** $3.41
-
-| Session | Author | Model | Started | Duration |
-|---|---|---|---|---|
-| `syntheti` | alice | claude-opus-5-5 | 2026-10-01 09:00 UTC | 2m |
-
-| Session | Prompts | Tool calls | Files | Commits | Cost | API value |
-|---|--:|--:|--:|--:|--:|--:|
-| `syntheti` | 2 | 7 | 2 | 1 | subscription | $3.41 |
-| **Total** | **2** | **7** | **2** | **1** | **subscription** | **$3.41** |
-
-| Session | Input | Output | Cache read | Cache write |
-|---|--:|--:|--:|--:|
-| `syntheti` | 1.2k | 45k | 1.2M | 80k |
-| **Total** | **1.2k** | **45k** | **1.2M** | **80k** |
-
-**Quality:** 86% tool success · tool errors: 1 · interruptions: 1 · compactions: 1 · tests: 1 passed, 1 failed
-```
+> ### 🤖 Claude Code session stats
+>
+> **1 session** · 2m · 2 prompts · 7 tool calls · 2 files edited · **Cost:** subscription · **API value:** $3.41
+>
+> | Session | Author | Model | Started | Duration |
+> |---|---|---|---|---|
+> | `syntheti` | alice | claude-opus-5-5 | 2026-10-01 09:00 UTC | 2m |
+>
+> | Session | Prompts | Tool calls | Files | Commits | Cost | API value |
+> |---|--:|--:|--:|--:|--:|--:|
+> | `syntheti` | 2 | 7 | 2 | 1 | subscription | $3.41 |
+> | **Total** | **2** | **7** | **2** | **1** | **subscription** | **$3.41** |
+>
+> | Session | Input | Output | Cache read | Cache write |
+> |---|--:|--:|--:|--:|
+> | `syntheti` | 1.2k | 45k | 1.2M | 80k |
+> | **Total** | **1.2k** | **45k** | **1.2M** | **80k** |
+>
+> **Quality:** 86% tool success · tool errors: 1 · interruptions: 1 · compactions: 1 · tests: 1 passed, 1 failed
 
 ## Install
 
