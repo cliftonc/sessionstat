@@ -140,6 +140,7 @@ export function buildProgram(overrides: Partial<ProgramDeps> = {}): Command {
 
   program
     .command('setup')
+    .alias('install')
     .description(commandDoc('setup'))
     .argument('[path]', 'a path inside the repository to install into (default: here)')
     .option('--global', 'install for every repository instead (~/.claude/settings.json)')

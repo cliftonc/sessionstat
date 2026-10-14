@@ -209,7 +209,7 @@ describe('SessionStart', () => {
     expect(d.out[0].endsWith('\n')).toBe(true)
     expect(JSON.parse(d.out[0])).toEqual({
       systemMessage:
-        'sessionstat: stats for this session will be added to PR #7 for feature/login (https://github.com/acme/app/pull/7)',
+        '\nsessionstat: stats for this session will be added to PR #7 for feature/login (https://github.com/acme/app/pull/7)',
     })
     expect(result.recorded).toBe(true)
     expect(await readFile(join(paths.sessions(), 'sess-1.json'), 'utf-8')).toContain(

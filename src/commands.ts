@@ -16,7 +16,7 @@ export const COMMANDS: CommandDoc[] = [
     name: 'setup',
     usage: 'sessionstat setup [path] [--global]',
     summary:
-      'Install the Claude Code hooks into the repository containing path (default: here) — or into every repository only with --global — plus the default template and the Claude skill, and check gh, git and the hook command',
+      '(alias: install) Install the Claude Code hooks into the repository containing path (default: here) — or into every repository only with --global — plus the default template and the Claude skill, and check gh, git and the hook command',
   },
   {
     name: 'uninstall',

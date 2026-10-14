@@ -32,6 +32,7 @@ brew install gh && gh auth login   # if you do not have gh yet
 
 cd path/to/your/repo
 sessionstat setup                  # this repository only; repeat in each repository you want
+                                   # (`sessionstat install` is the same command)
 ```
 
 **sessionstat is per repository.** `sessionstat setup [path]` installs into the repository

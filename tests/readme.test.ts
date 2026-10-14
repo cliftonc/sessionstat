@@ -25,7 +25,9 @@ function examples(markdown: string): string[] {
 }
 
 function resolve(program: Command, words: string[]): { cmd: Command; name: string } | null {
-  const parent = program.commands.find(c => c.name() === words[0])
+  const parent = program.commands.find(
+    c => c.name() === words[0] || c.aliases().includes(words[0] ?? '')
+  )
   if (!parent) return null
   if (parent.commands.length === 0) return { cmd: parent, name: parent.name() }
   const child = parent.commands.find(c => c.name() === words[1])
@@ -52,5 +54,12 @@ describe('README examples match the CLI', async () => {
     for (const flag of example.match(/(?<=\s|\[)--?[a-z][a-z-]*/g) ?? []) {
       expect(flags.has(flag), `${flag} in "${example}"`).toBe(true)
     }
+  })
+})
+
+describe('install', () => {
+  it('is an alias for setup', () => {
+    const setup = buildProgram().commands.find(c => c.name() === 'setup')
+    expect(setup?.aliases()).toContain('install')
   })
 })

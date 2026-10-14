@@ -64,7 +64,10 @@ export async function noticeFor(
   return noticeText(await startLookup(meta, config, run, timeoutMs), meta, config)
 }
 
-/** The JSON Claude Code reads from a SessionStart hook's stdout. */
+/**
+ * The JSON Claude Code reads from a SessionStart hook's stdout. Claude Code shows it after
+ * "SessionStart:startup says:", so a leading newline puts the notice on a line of its own.
+ */
 export function noticeJson(line: string): string {
-  return `${JSON.stringify({ systemMessage: line })}\n`
+  return `${JSON.stringify({ systemMessage: `\n${line}` })}\n`
 }

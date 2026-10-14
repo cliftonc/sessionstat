@@ -123,6 +123,6 @@ describe('the start-of-session notice', () => {
   })
 
   it('is one line of JSON', () => {
-    expect(noticeJson('hi')).toBe('{"systemMessage":"hi"}\n')
+    expect(noticeJson('hi')).toBe('{"systemMessage":"\\nhi"}\n')
   })
 })
