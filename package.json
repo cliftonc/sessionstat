@@ -1,9 +1,18 @@
 {
   "name": "sessionstat",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Post Claude Code session stats on your pull requests, using your own gh login",
   "type": "module",
   "license": "MIT",
+  "author": "Clifton Cunningham",
+  "homepage": "https://github.com/cliftonc/sessionstat#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cliftonc/sessionstat.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cliftonc/sessionstat/issues"
+  },
   "bin": {
     "sessionstat": "./dist/cli.js"
   },
@@ -17,6 +26,7 @@
   },
   "scripts": {
     "build": "tsup",
+    "prepack": "pnpm build",
     "typecheck": "tsc --noEmit",
     "lint": "biome check src tests",
     "lint:fix": "biome check --write src tests",
