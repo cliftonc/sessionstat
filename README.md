@@ -10,25 +10,46 @@ anywhere except GitHub, and no prompt text is posted.
 
 What the comment looks like:
 
-> ### 🤖 Claude Code session stats
+> ### Claude Code · 3 sessions · 1h 59m
 >
-> **1 session** · 2m · 2 prompts · 7 tool calls · 2 files edited · **Cost:** subscription · **API value:** $3.41
+> | Time | Prompts | Tool calls | Files | Commits | Tokens | Billed | API value |
+> |:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+> | **1h 59m** | **47** | **375** | **33** | **9** | **24.9M** | **$1.10<br><sub>+ plan</sub>** | **$48.15** |
 >
-> | Session | Author | Model | Started | Duration |
-> |---|---|---|---|---|
-> | `syntheti` | alice | claude-opus-5-5 | 2026-10-01 09:00 UTC | 2m |
+> <details open>
+> <summary><b>Sessions</b> · 2 build, 1 follow-up · Oct 14 09:00 to Oct 15 10:32 UTC</summary>
 >
-> | Session | Prompts | Tool calls | Files | Commits | Cost | API value |
-> |---|--:|--:|--:|--:|--:|--:|
-> | `syntheti` | 2 | 7 | 2 | 1 | subscription | $3.41 |
-> | **Total** | **2** | **7** | **2** | **1** | **subscription** | **$3.41** |
+> #### Activity
 >
-> | Session | Input | Output | Cache read | Cache write |
-> |---|--:|--:|--:|--:|
-> | `syntheti` | 1.2k | 45k | 1.2M | 80k |
-> | **Total** | **1.2k** | **45k** | **1.2M** | **80k** |
+> | Session | Time | Oct 14 09:00 → Oct 15 10:32 | Prompts | Tools | Files | Commits |
+> |---|--:|---|--:|--:|--:|--:|
+> | **Build** | | | | | | |
+> | `a1b2c3d4` alice | 42m | `███··················\|\|·` | 18 | 143 | 12 | 3 |
+> | `b4e5f6a7` alice | 1h 5m | `················▐████\|\|·` | 25 | 210 | 19 | 5 |
+> | **Follow-up** | | | | | | |
+> | `c7d8e9f0` bob | 12m | `·····················\|\|█` | 4 | 22 | 3 | 1 |
 >
-> **Quality:** 86% tool success · tool errors: 1 · interruptions: 1 · compactions: 1 · tests: 1 passed, 1 failed
+> #### Tokens and cost
+>
+> | Session | Model | Input | Output | Cache read | Cache write | Tokens | Billed | API value |
+> |---|---|--:|--:|--:|--:|--:|--:|--:|
+> | **Build** | | | | | | | | |
+> | `a1b2c3d4` alice | Opus 5.5 | 24k | 310k | 8.4M | 610k | 9.3M | plan | $18.20 |
+> | `b4e5f6a7` alice | Opus 5.5 | 31k | 450k | 12.9M | 880k | 14.3M | plan | $27.90 |
+> | **Follow-up** | | | | | | | | |
+> | `c7d8e9f0` bob | Sonnet 5.5 | 6k | 48k | 1.1M | 120k | 1.3M | $1.10 | $2.05 |
+> | **Total** | | **61k** | **808k** | **22.4M** | **1.6M** | **24.9M** | **$1.10<br><sub>+ plan</sub>** | **$48.15** |
+>
+> <sub>Build: before the PR was opened; follow-up: after. Timeline: real time, each character ≈ 15 min; <code>\|\|</code> is a break of more than 4h left out. Billed "plan": covered by a Claude subscription.</sub>
+>
+> </details>
+>
+> **Quality** · 95% tool success · tests: 12 passed, **1 failed** · tool errors: 21 · interruptions: 2 · compactions: 1
+>
+> <sub>Posted by [sessionstat](https://www.npmjs.com/package/sessionstat) · updated 2026-10-15 10:40 UTC</sub>
+
+With one session, the tables under the headline collapse to a single row: who, the model, when it
+started and the token split.
 
 ## Install
 
@@ -294,10 +315,12 @@ maths.
 | Variable | |
 |---|---|
 | `pr.number`, `pr.url`, `pr.branch`, `repo`, `branch`, `generatedAt` | Where and when |
-| `multipleSessions`, `hasCost`, `hasValue`, `hasTests`, `hasErrors`, `hasBuild`, `hasFollowUp` | Flags for optional sections |
-| `totals` | `sessionCount`, `sessionNoun`, `duration`, `turns`, `toolCalls`, `filesEdited`, `commits`, `tokens.{input,output,cacheRead,cacheWrite}`, `cost`, `costPartial`, `value`, `valuePartial`, `hasCost`, `hasValue`, `errors`, `interruptions`, `compactions`, `testRuns.{passed,failed}`, `successRate` |
+| `multipleSessions`, `singleSession`, `hasCost`, `hasValue`, `hasPlan`, `hasTests`, `testsFailing`, `hasErrors`, `hasBuild`, `hasFollowUp`, `bothPhases` | Flags for optional sections |
+| `phaseSummary`, `groups[]{label,sessions[]}` | `2 build, 1 follow-up`; the sessions grouped under `Build` and `Follow-up` |
+| `timeline` | The axis of the session bars: `from`, `to` (`Oct 14 09:00`, UTC), `minutesPerChar`, `hasBreaks`, `breakHours` |
+| `totals` | `sessionCount`, `sessionNoun`, `duration`, `turns`, `toolCalls`, `filesEdited`, `commits`, `tokens.{input,output,cacheRead,cacheWrite,total}`, `cost`, `billed`, `costPartial`, `value`, `valuePartial`, `hasCost`, `hasValue`, `errors`, `interruptions`, `compactions`, `testRuns.{passed,failed}`, `successRate` |
 | `buildTotals`, `followUpTotals` | The same, for each half |
-| `sessions[]`, `buildSessions[]`, `followUpSessions[]` | `id`, `shortId`, `author`, `model`, `startedAt`, `duration`, `phase`, `openedBeforePr`, `turns`, `toolCalls`, `tools[]{name,count}`, `filesEdited`, `commits[]{sha,short}`, `commitCount`, `tokens`, `billing`, `cost`, `value`, `errors`, `interruptions`, `compactions`, `testRuns`, `successRate`, `processQuality`, `iterations` |
+| `sessions[]`, `buildSessions[]`, `followUpSessions[]` | `id`, `shortId`, `author`, `model`, `modelName` (`Opus 5.5`), `startedAt`, `started` (`Oct 14 09:00`), `duration`, `timeline` (the session's bar, for inside backticks in a table cell), `phase`, `phaseLabel`, `openedBeforePr`, `turns`, `toolCalls`, `tools[]{name,count}`, `filesEdited`, `commits[]{sha,short}`, `commitCount`, `tokens`, `billing`, `cost`, `billed`, `value`, `errors`, `interruptions`, `compactions`, `testRuns`, `successRate`, `processQuality`, `iterations` |
 
 What the numbers mean: **prompts** are messages you typed (sub-agent prompts excluded); **tool
 errors** are tool calls whose result came back as an error; **interruptions** are presses of
@@ -313,8 +336,8 @@ There are two dollar figures, and they are never added together:
   then is priced per request from a rate table vendored into sessionstat (`pnpm update-prices`
   refreshes it from [litellm](https://github.com/BerriAI/litellm)). A model with no published
   rate shows `–`, never a guess.
-- **Cost** is what was actually billed. When the session ran on a Claude subscription (Pro, Max,
-  Team…) nobody is invoiced per token, so it shows `subscription`; when it was billed per token
+- **Billed** is what was actually paid. When the session ran on a Claude subscription (Pro, Max,
+  Team…) nobody is invoiced per token, so it shows `plan` (`cost` says `subscription`); when it was billed per token
   (an API key, `ANTHROPIC_AUTH_TOKEN`, Bedrock, Vertex or Foundry) it equals the API value. The
   billing mode is detected by the hook on the machine that ran the session, from its environment
   and the logged-in account in `~/.claude.json`, and stored with the session.

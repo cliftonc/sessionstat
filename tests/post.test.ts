@@ -96,7 +96,7 @@ describe('posting', () => {
       'POST repos/{owner}/{repo}/issues/7/comments',
       'PATCH repos/{owner}/{repo}/issues/comments/1000',
     ])
-    expect(github.state.comments[0].body).toContain('3 prompts')
+    expect(github.state.comments[0].body).toContain('| **1h** | **3** |')
   })
 
   it('merges into the existing data block: block-only sessions are kept, local ones replaced', async () => {
@@ -125,7 +125,7 @@ describe('posting', () => {
       ['synthetic-session-0001', 2],
     ])
     // The rendered view comes from the merged set too.
-    expect(github.state.comments[0].body).toContain('**2 sessions**')
+    expect(github.state.comments[0].body).toContain('### Claude Code · 2 sessions')
     expect(data?.totals.turns).toBe(13)
   })
 
