@@ -97,22 +97,25 @@ The comment is a [Mustache](https://mustache.github.io/mustache.5.html) template
 
 \`sessionstat template init\` (or \`--repo\`) writes the default out to edit, and
 \`sessionstat template vars\` prints every field available for the current branch. Numbers
-arrive pre-formatted (\`"1h 12m"\`, \`"$3.41"\`, \`"1.2M"\`); flags like \`multipleSessions\`,
-\`hasCost\`, \`hasValue\`, \`hasTests\` and \`hasErrors\` exist to show or hide sections.
-\`cost\` is what was actually billed (\`subscription\` on a Claude plan); \`value\` is the same
-tokens at API list price. They are deliberately separate and never summed.
+arrive pre-formatted (\`"1h 12m"\`, \`"$3.41"\`, \`"1.2M"\`); flags like \`singleSession\`,
+\`multipleSessions\`, \`bothPhases\`, \`hasPlan\`, \`hasTests\` and \`testsFailing\` exist to show or
+hide sections. \`billed\` / \`cost\` is what was actually paid (\`plan\` / \`subscription\` on a Claude
+plan); \`value\` is the same tokens at API list price. They are deliberately separate and never
+summed.
 
-Each section of the default template is one \`{{#…}}…{{/…}}\` block. To hide one, delete the
-block. For example, to drop the API value from the summary line, remove:
-
-\`\`\`mustache
-{{#hasValue}} · **API value:** {{value}}…{{/hasValue}}
-\`\`\`
+The default comment is a headline table of totals. With one session it adds a single row (who,
+model, start, token split). With several it adds, folded in \`<details>\`, an **Activity** table
+with a text Gantt bar per session (\`timeline\`: real time, idle stretches over 4h cut to
+\`||\`, escaped as \`\\|\` so the table cell survives) and a **Tokens and cost** table, both
+grouped into Build and Follow-up rows when there are both. Each section is one
+\`{{#…}}…{{/…}}\` block; to hide one, delete the block. For example, to drop the per-session
+token table, remove the \`#### Tokens and cost\` heading and the table under it.
 
 Preview with \`sessionstat show\` before anything is posted. The \`<!-- sessionstat -->\` marker
 and the hidden data block are always added by sessionstat, so a template cannot break updating
-the comment. Useful view fields: \`totals\`, \`sessions\`, \`buildSessions\` /
-\`followUpSessions\` (with \`hasBuild\` / \`hasFollowUp\`), and per session \`commits\`. A template
+the comment. Useful view fields: \`totals\`, \`sessions\`, \`groups\` (label + sessions),
+\`timeline\` (\`from\`, \`to\`, \`minutesPerChar\`, \`hasBreaks\`), \`buildSessions\` /
+\`followUpSessions\`, and per session \`modelName\`, \`started\`, \`timeline\`, \`commits\`. A template
 that fails to parse is logged and the default is used instead.
 
 ## Project board (optional)

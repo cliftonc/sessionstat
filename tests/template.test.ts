@@ -59,25 +59,19 @@ describe('default template', () => {
     expect(source).toBe('default')
     expect(body).toMatchInlineSnapshot(`
       "<!-- sessionstat -->
-      ### 🤖 Claude Code session stats
+      ### Claude Code · 1 session · 2m
 
-      **1 session** · 2m · 2 prompts · 7 tool calls · 2 files edited · **Cost:** subscription · **API value:** $3.41
+      | Time | Prompts | Tool calls | Files | Commits | Tokens | Billed | API value |
+      |:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+      | **2m** | **2** | **7** | **2** | **1** | **1.3M** | **plan** | **$3.41** |
 
-      | Session | Author | Model | Started | Duration |
-      |---|---|---|---|---|
-      | \`syntheti\` | alice | claude-opus-5-5 | 2026-10-01 09:00 UTC | 2m |
+      | Session | Model | Started | Input | Output | Cache read | Cache write |
+      |---|---|---|--:|--:|--:|--:|
+      | \`syntheti\` alice | Opus 5.5 | Oct 01 09:00 | 1.2k | 45k | 1.2M | 80k |
 
-      | Session | Prompts | Tool calls | Files | Commits | Cost | API value |
-      |---|--:|--:|--:|--:|--:|--:|
-      | \`syntheti\` | 2 | 7 | 2 | 1 | subscription | $3.41 |
-      | **Total** | **2** | **7** | **2** | **1** | **subscription** | **$3.41** |
+      <sub>Before the PR was opened. Billed "plan": covered by a Claude subscription.</sub>
 
-      | Session | Input | Output | Cache read | Cache write |
-      |---|--:|--:|--:|--:|
-      | \`syntheti\` | 1.2k | 45k | 1.2M | 80k |
-      | **Total** | **1.2k** | **45k** | **1.2M** | **80k** |
-
-      **Quality:** 86% tool success · tool errors: 1 · interruptions: 1 · compactions: 1 · tests: 1 passed, 1 failed
+      **Quality** · 86% tool success · tests: 1 passed, **1 failed** · tool errors: 1 · interruptions: 1 · compactions: 1
 
       <sub>Posted by [sessionstat](https://www.npmjs.com/package/sessionstat) · updated 2026-10-14 12:00 UTC</sub>
 
@@ -93,8 +87,32 @@ describe('default template', () => {
     expect(view.followUpSessions[0].phase).toBe('follow-up')
     expect(view.hasBuild && view.hasFollowUp).toBe(true)
     const { body } = await render(view, repo)
-    expect(body).toContain('**Build** — before the PR was opened')
-    expect(body).toContain('**Follow-up** — after the PR was opened (1 session')
+    expect(view.bothPhases).toBe(true)
+    expect(view.phaseSummary).toBe('1 build, 1 follow-up')
+    expect(view.groups.map(g => g.label)).toEqual(['Build', 'Follow-up'])
+    expect(body).toContain('| **Build** | | | | | | |')
+    expect(body).toContain('| **Follow-up** | | | | | | |')
+    expect(body).toContain('#### Activity')
+    expect(body).toContain('#### Tokens and cost')
+    expect(body).toContain('Build: before the PR was opened; follow-up: after.')
+  })
+
+  it('leaves out the group rows when every session is in one phase', async () => {
+    const view = await viewFor('claude-code-sample-1.jsonl', 'claude-code-synthetic.jsonl')
+    expect(view.bothPhases).toBe(false)
+    const { body } = await render(view, repo)
+    expect(body).not.toContain('| **Build** |')
+    expect(body).not.toContain('Build: before the PR was opened')
+  })
+
+  it('draws every session on one timeline', async () => {
+    const view = await viewFor('claude-code-sample-1.jsonl', 'claude-code-sample-2.jsonl')
+    const bars = view.sessions.map(s => s.timeline)
+    expect(bars).toHaveLength(2)
+    for (const bar of bars) expect(bar.replace(/\\\|/g, '|')).toHaveLength(24)
+    const { body } = await render(view, repo)
+    expect(body).toContain(`| ${view.timeline.from} → ${view.timeline.to} |`)
+    for (const bar of bars) expect(body).toContain(`\`${bar}\``)
   })
 
   it('exposes commits per session', async () => {
@@ -110,18 +128,19 @@ describe('default template', () => {
     expect(view.totals.valuePartial).toBe(true)
     const { body } = await render(view, repo)
     expect(body).toContain('<details>')
-    expect(body).toContain('**2 sessions**')
-    expect(body).toContain('**Cost:** subscription (some sessions unknown)')
-    expect(body).toContain('**API value:** $3.41 (some sessions unpriced)')
+    expect(body).toContain('### Claude Code · 2 sessions')
+    expect(body).toContain("Some sessions' spend is unknown.")
+    expect(body).toContain('Some sessions are unpriced.')
+    expect(body).toContain('| **plan** | **$3.41** |')
     // An API-billed session on a model with no published rate: neither figure is guessed.
-    expect(body).toMatch(/\| `b1a1efd7` \| \d+ \| \d+ \| \d+ \| \d+ \| – \| – \|/)
+    expect(body).toMatch(/\| `b1a1efd7` \S+ \|(?: [^|]+ \|){6} – \| – \|/)
   })
 
   it('hides cost entirely when no session has one yet', async () => {
     const view = await viewFor('claude-code-sample-2.jsonl')
     expect(view.hasCost).toBe(false)
     const { body } = await render(view, repo)
-    expect(body).not.toContain('**Cost:**')
+    expect(body).toContain('| **–** | **–** |')
     expect(body).not.toContain('$')
   })
 })
@@ -164,7 +183,7 @@ describe('a broken template', () => {
     const result = await render(await viewFor('claude-code-synthetic.jsonl'), repo)
     expect(result.source).toBe('default')
     expect(result.fallbackError).toMatch(/Unclosed section/)
-    expect(result.body).toContain('### 🤖 Claude Code session stats')
+    expect(result.body).toContain('### Claude Code · 1 session')
     const log = await readFile(paths.logFile(), 'utf-8')
     expect(log).toContain('failed to render, using the default')
   })
