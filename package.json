@@ -1,6 +1,6 @@
 {
   "name": "sessionstat",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Post Claude Code session stats on your pull requests, using your own gh login",
   "type": "module",
   "license": "MIT",
