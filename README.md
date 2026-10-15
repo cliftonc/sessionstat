@@ -54,11 +54,37 @@ sessionstat: Not inside a git repository. Run it in the repo you want, or use --
 
 `setup` checks that `git` and `gh` are installed, that `gh` is logged in and that the hook
 command resolves; it writes the hooks and reads the settings back to confirm both that they are
-there and that your own hooks are untouched; it copies the default template for you to edit; it
-installs a Claude Code skill so Claude can explain and configure sessionstat for you; and it ends
+there and that your own hooks are untouched; it installs a Claude Code skill so Claude can explain and configure sessionstat for you; and it ends
 with a ✓/✗ checklist and one line saying where it installed (`Installed for /path/to/repo
 only.`). If `gh` is missing or logged out it prints the fix and exits non-zero, but the hooks
 are installed anyway.
+
+Run in a terminal, it walks you through the optional parts, each defaulting to no:
+
+```
+Post session stats for everyone working in /path/to/repo (writes .claude/settings.json, to commit)? [y/N]
+Also keep these stats as fields on a GitHub Projects board for acme/app, to chart them across PRs? [y/N]
+Share the board setting with everyone in acme/app (writes .claude/sessionstat.json, to commit)? [y/N]
+Customise the comment template? [y/N]
+```
+
+Flags answer them without asking (and nothing is asked without a terminal):
+`--team`, `--project-board <url|create>` / `--no-project-board`, `--share-board` and
+`--template repo|home|none`. Say no to everything and the only file written in the repository
+is your own `.claude/settings.local.json`.
+
+### For the whole team: `--team`
+
+```bash
+sessionstat setup --team
+```
+
+puts the hooks in `.claude/settings.json`, which you commit, so sessionstat runs for everyone
+who works in the repository. The hook command there cannot name a path on your machine, so it
+runs `node_modules/.bin/sessionstat` if the repository has sessionstat as a dependency (pin it
+with `npm install -D sessionstat`), else `sessionstat` from PATH, and otherwise does nothing:
+teammates without it see no errors. It does not use `npx`, which would add seconds to every
+hook. Each teammate posts with their own `gh` login. `sessionstat uninstall --team` removes it.
 
 ### Every repository: `--global`, only if you mean it
 
@@ -76,17 +102,19 @@ silence one repository, `sessionstat disable` in that repository.
 
 ### Where things live
 
-| | Per repository (default) | Global (`--global`) |
+| | Just you (default) | Shared with the team (opt-in, committed) |
 |---|---|---|
-| Hooks | `<repo>/.claude/settings.local.json` | `~/.claude/settings.json` |
-| Template copied by setup | `<repo>/.sessionstat.md` | `~/.sessionstat/template.md` |
-| Claude skill | `~/.claude/skills/sessionstat/SKILL.md` (always global) | the same |
-| Sessions, check queue, config, logs | `~/.sessionstat/` | the same |
+| Hooks | `<repo>/.claude/settings.local.json` (or `~/.claude/settings.json` with `--global`) | `<repo>/.claude/settings.json` (`--team`) |
+| Project board setting | `~/.sessionstat/config.json` | `<repo>/.claude/sessionstat.json` (`--share-board`, `board setup --repo`) |
+| Template | built in; `~/.sessionstat/template.md` if you write one out | `<repo>/.claude/sessionstat.md` (`template init --repo`) |
+| Claude skill | `~/.claude/skills/sessionstat/SKILL.md` | |
+| Sessions, check queue, config, logs | `~/.sessionstat/` | |
 
 `settings.local.json` is Claude Code's personal settings file for a repository, meant to stay
 out of git, so a per-repository install is yours alone (check it is in your `.gitignore` if
-Claude Code did not create it first). The template never overwrites an existing one;
-`<repo>/.sessionstat.md` *can* be committed if your team wants to share it. The skill is
+Claude Code did not create it first). Nothing sessionstat-specific goes in the repository's
+root; files from older versions there (`.sessionstat.md`, `.sessionstat.json`) are still read,
+and can be moved into `.claude/` as `sessionstat.md` and `sessionstat.json`. The skill is
 documentation for Claude, so it is always global, and it is removed once no scope has hooks
 left.
 
@@ -211,8 +239,9 @@ Fields are created if missing and matched by name; a field of yours with the sam
 different type is left alone. Only changed values are written, in one request. A board that
 cannot be written is logged (`sessionstat logs --errors`) and never stops the comment.
 
-The setting lives in `<repo>/.sessionstat.json` (commit it so the team shares the board), or for
-a `--global` install under `boards` in `~/.sessionstat/config.json`:
+The setting lives under `boards` in `~/.sessionstat/config.json`, keyed by `owner/repo`, or,
+to share it with the team, in `<repo>/.claude/sessionstat.json` (`sessionstat board setup
+--repo`), which wins:
 
 ```json
 { "board": { "owner": "acme", "number": 7, "prefix": "Agent ", "fields": ["sessions", "minutes", "cost"] } }
@@ -225,11 +254,11 @@ are optional.
 
 | Command | |
 |---|---|
-| `sessionstat setup [path] [--global] [--project-board <url\|create>] [--no-project-board]` | Install hooks (this repository, or everywhere with `--global`), template and skill; check everything; offer a project board |
-| `sessionstat board setup [url\|create] [--global]` | Create or pick the repository's project board and add its fields |
+| `sessionstat setup [path] [--global \| --team] [--project-board <url\|create>] [--no-project-board] [--share-board] [--template <repo\|home\|none>]` | Install hooks (this repository, for the team with `--team`, or everywhere with `--global`) and the skill; check everything; offer a project board and a template to customise |
+| `sessionstat board setup [url\|create] [--repo]` | Create or pick the repository's project board and add its fields |
 | `sessionstat board status` | The board, its fields, last sync and token scope |
 | `sessionstat board resync [--pr <number>]` | Rewrite a PR's board fields from its comments |
-| `sessionstat uninstall [path] [--global]` | Remove the hooks from this repository, or the global ones |
+| `sessionstat uninstall [path] [--global \| --team]` | Remove your hooks from this repository, its team hooks, or the global ones |
 | `sessionstat status` | Which scopes cover this repository, gh login, template in effect, sessions, queued checks, last error |
 | `sessionstat show [--all] [--transcript <file...>] [--no-pr]` | Print the comment without posting |
 | `sessionstat post [--force]` | Post or update the comment now |
@@ -246,7 +275,8 @@ The comment is rendered from a [Mustache](https://mustache.github.io/mustache.5.
 Mustache has no logic, so a template cannot throw at runtime; to hide a section, delete its
 `{{#…}}…{{/…}}` block. The first of these that exists wins:
 
-1. `<repo>/.sessionstat.md`: per repository; commit it to share it with your team
+1. `<repo>/.claude/sessionstat.md`: per repository; commit it to share it with your team
+   (the older `<repo>/.sessionstat.md` is still read)
 2. `~/.sessionstat/template.md`: your own default
 3. the template built into sessionstat (`src/template/default.md`)
 
@@ -299,7 +329,7 @@ There are two dollar figures, and they are never added together:
 | `enabled` | `true` | `false` turns sessionstat off everywhere it is installed |
 | `disabledRepos` | `[]` | Repository roots where it is off |
 | `projectInstalls` | `[]` | Repositories with a project-scope install (kept by setup) |
-| `boards` | `{}` | Project boards by `owner/repo`, for repositories without a `.sessionstat.json` |
+| `boards` | `{}` | Project boards by `owner/repo`, unless the repository shares one in `.claude/sessionstat.json` |
 
 ## Troubleshooting
 
