@@ -69,7 +69,8 @@ describe('the skill cannot drift from the CLI', () => {
     for (const text of [
       '~/.claude/settings.json',
       '.claude/settings.local.json',
-      '<repo>/.sessionstat.md',
+      '<repo>/.claude/sessionstat.md',
+      'sessionstat setup --team',
       '~/.sessionstat/template.md',
       'sessionstat template vars',
       '`notice`',

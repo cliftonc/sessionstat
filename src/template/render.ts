@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import Mustache from 'mustache'
 import { MARKER } from '../gh.js'
 import { log } from '../log.js'
-import { paths, repoTemplatePath } from '../paths.js'
+import { legacyRepoTemplatePath, paths, repoTemplatePath } from '../paths.js'
 import { type DataBlock, serializeDataBlock } from './data.js'
 import DEFAULT_TEMPLATE from './default.md'
 import type { CommentView } from './view.js'
@@ -25,12 +25,16 @@ async function readIfExists(path: string): Promise<string | null> {
   }
 }
 
-/** First match wins: `<repo>/.sessionstat.md`, then `~/.sessionstat/template.md`, then ours. */
+/**
+ * First match wins: `<repo>/.claude/sessionstat.md` (or the older `<repo>/.sessionstat.md`),
+ * then `~/.sessionstat/template.md`, then ours.
+ */
 export async function resolveTemplate(repoRoot: string | null): Promise<ResolvedTemplate> {
   if (repoRoot) {
-    const path = repoTemplatePath(repoRoot)
-    const template = await readIfExists(path)
-    if (template !== null) return { source: 'repo', path, template }
+    for (const path of [repoTemplatePath(repoRoot), legacyRepoTemplatePath(repoRoot)]) {
+      const template = await readIfExists(path)
+      if (template !== null) return { source: 'repo', path, template }
+    }
   }
   const homePath = paths.homeTemplate()
   const home = await readIfExists(homePath)

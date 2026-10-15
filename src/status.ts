@@ -2,7 +2,7 @@ import { listChecks, pollerRunning } from './checks.js'
 import { isEnabledFor, loadConfig } from './config.js'
 import { getGitMetadata } from './git.js'
 import { lastError } from './log.js'
-import { paths, projectSettingsPath } from './paths.js'
+import { paths, projectSettingsPath, teamSettingsPath } from './paths.js'
 import type { CommandRunner } from './runner.js'
 import { listSessions } from './sessions.js'
 import { hasHooksInstalled, installedEvents } from './settings.js'
@@ -16,11 +16,16 @@ function ago(ms: number): string {
 }
 
 /** Which scopes cover the repository at `root` (null: not in a repository). */
-export function scopeSummary(root: string | null, repo: boolean, global: boolean): string {
-  if (repo && global) {
-    return 'this repository and global (each event fires twice; de-duplicated)'
-  }
+export function scopeSummary(
+  root: string | null,
+  repo: boolean,
+  global: boolean,
+  team = false
+): string {
+  const on = [repo && 'this repository', team && 'the team', global && 'global'].filter(Boolean)
+  if (on.length > 1) return `${on.join(' and ')} (each event fires twice; de-duplicated)`
   if (global) return root ? 'global (covers this repository)' : 'global'
+  if (team) return 'the team: everyone working in this repository'
   if (repo) return 'this repository only'
   return root ? 'not installed for this repository (sessionstat setup)' : 'not in a git repository'
 }
@@ -43,7 +48,9 @@ export async function runStatus(deps: {
   const globalOn = userEvents.length > 0
   const repoEvents = meta.toplevel ? await installedEvents(projectSettingsPath(meta.toplevel)) : []
   const repoOn = repoEvents.length > 0
-  out(`  scope    ${scopeSummary(meta.toplevel, repoOn, globalOn)}`)
+  const teamEvents = meta.toplevel ? await installedEvents(teamSettingsPath(meta.toplevel)) : []
+  const teamOn = teamEvents.length > 0
+  out(`  scope    ${scopeSummary(meta.toplevel, repoOn, globalOn, teamOn)}`)
   if (globalOn) {
     out(`  ! global install: runs in every repository (${paths.userSettings()})`)
   }
@@ -51,12 +58,15 @@ export async function runStatus(deps: {
     out(
       `  repo     ${repoOn ? `yes (${projectSettingsPath(meta.toplevel)}: ${repoEvents.join(', ')})` : 'no (sessionstat setup)'}`
     )
+    out(
+      `  team     ${teamOn ? `yes (${teamSettingsPath(meta.toplevel)}: ${teamEvents.join(', ')})` : 'no (sessionstat setup --team)'}`
+    )
   }
   out(`  global   ${globalOn ? `yes (${paths.userSettings()}: ${userEvents.join(', ')})` : 'no'}`)
   const others = (config.projectInstalls ?? []).filter(r => r !== meta.toplevel)
   for (const repo of others) {
-    if (await hasHooksInstalled(projectSettingsPath(repo))) {
-      out(`  also     ${projectSettingsPath(repo)}`)
+    for (const path of [projectSettingsPath(repo), teamSettingsPath(repo)]) {
+      if (await hasHooksInstalled(path)) out(`  also     ${path}`)
     }
   }
   const skill = await installedSkillVersion()

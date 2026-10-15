@@ -59,8 +59,11 @@ const defaultDeps: ProgramDeps = {
 
 interface ScopeFlags {
   global?: boolean
+  team?: boolean
   project?: string | boolean
   projectBoard?: string | false
+  shareBoard?: boolean
+  template?: string
 }
 
 interface ViewOptions {
@@ -165,17 +168,35 @@ export function buildProgram(overrides: Partial<ProgramDeps> = {}): Command {
     .argument('[path]', 'a path inside the repository to install into (default: here)')
     .option('--global', 'install for every repository instead (~/.claude/settings.json)')
     .option(
+      '--team',
+      'install for everyone working in the repository (.claude/settings.json, to commit)'
+    )
+    .option(
       '--project-board <url|create>',
       'also mirror stats to a GitHub Projects board: an existing project URL, or create one'
     )
     .option('--no-project-board', 'do not offer a project board')
+    .option('--share-board', 'save the board setting in .claude/sessionstat.json, to commit')
+    .addOption(
+      new Option('--template <where>', 'write the default template out to edit').choices([
+        'repo',
+        'home',
+        'none',
+      ])
+    )
     .addOption(projectAlias())
     .action(async (path: string | undefined, opts: ScopeFlags) => {
       try {
         const scope = scopeArgs('setup', path, opts)
         if (!scope) return
         const result = await runSetup(
-          { ...scope, projectBoard: opts.projectBoard },
+          {
+            ...scope,
+            team: opts.team,
+            projectBoard: opts.projectBoard,
+            shareBoard: opts.shareBoard,
+            template: opts.template as 'repo' | 'home' | 'none' | undefined,
+          },
           {
             run: deps.run,
             out: deps.out,
@@ -195,12 +216,16 @@ export function buildProgram(overrides: Partial<ProgramDeps> = {}): Command {
     .description(commandDoc('uninstall'))
     .argument('[path]', 'a path inside the repository to remove it from (default: here)')
     .option('--global', 'remove the global hooks, the ones that run in every repository')
+    .option('--team', 'remove the team hooks from the repository’s .claude/settings.json')
     .addOption(projectAlias())
     .action(async (path: string | undefined, opts: ScopeFlags) => {
       try {
         const scope = scopeArgs('uninstall', path, opts)
         if (!scope) return
-        const result = await runUninstall(scope, { run: deps.run, out: deps.out, cwd: deps.cwd() })
+        const result = await runUninstall(
+          { ...scope, team: opts.team },
+          { run: deps.run, out: deps.out, cwd: deps.cwd() }
+        )
         if (!result.ok) deps.setExitCode(1)
       } catch (err) {
         fail(err)
@@ -299,13 +324,20 @@ export function buildProgram(overrides: Partial<ProgramDeps> = {}): Command {
     .command('setup')
     .description(commandDoc('board setup'))
     .argument('[url|create]', 'an existing project URL, or create to make one')
-    .option('--global', 'save the setting in ~/.sessionstat/config.json, not .sessionstat.json')
-    .action(async (choice: string | undefined, opts: { global?: boolean }) => {
+    .option('--repo', 'save the setting in .claude/sessionstat.json, to commit for the team')
+    .addOption(
+      new Option('--global', 'deprecated: ~/.sessionstat/config.json is the default').hideHelp()
+    )
+    .action(async (choice: string | undefined, opts: { repo?: boolean; global?: boolean }) => {
       try {
         const meta = await getGitMetadata(deps.cwd(), deps.run)
         if (!meta.toplevel) throw new Error('Not inside a git repository')
         const result = await setupBoard(
-          { repoRoot: meta.toplevel, choice, global: opts.global },
+          {
+            repoRoot: meta.toplevel,
+            choice,
+            share: opts.repo ? true : opts.global ? false : undefined,
+          },
           { run: deps.run, ask: deps.ask }
         )
         if (result.checks.length === 0) {
@@ -361,7 +393,10 @@ export function buildProgram(overrides: Partial<ProgramDeps> = {}): Command {
   template
     .command('init')
     .description(commandDoc('template init'))
-    .option('--repo', 'write <repo>/.sessionstat.md instead of ~/.sessionstat/template.md')
+    .option(
+      '--repo',
+      'write <repo>/.claude/sessionstat.md, shared with the team, not ~/.sessionstat/template.md'
+    )
     .option('--force', 'overwrite an existing file')
     .action(async (opts: { repo?: boolean; force?: boolean }) => {
       try {

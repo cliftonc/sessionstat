@@ -1,9 +1,10 @@
 import { constants, access, mkdir, realpath, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
+import { repoSettingsPath } from './board/settings.js'
 import { setupBoard } from './board/setup.js'
 import { loadConfig, updateConfig } from './config.js'
-import { paths, projectSettingsPath, repoTemplatePath } from './paths.js'
+import { paths, projectSettingsPath, repoTemplatePath, teamSettingsPath } from './paths.js'
 import type { CommandRunner } from './runner.js'
 import {
   HOOK_EVENTS,
@@ -15,7 +16,7 @@ import {
   withoutOurs,
 } from './settings.js'
 import { installSkill } from './skill.js'
-import { DEFAULT_TEMPLATE } from './template/render.js'
+import { DEFAULT_TEMPLATE, resolveTemplate } from './template/render.js'
 
 export interface CheckLine {
   ok: boolean
@@ -44,27 +45,54 @@ export interface SetupOptions {
   /** Install into the user-level settings, so it runs in every repository. Never the default. */
   global?: boolean
   /**
+   * Install into the repository's committed `.claude/settings.json`, so it runs for everyone
+   * who works in it. Absent: ask, if someone can answer; otherwise personal.
+   */
+  team?: boolean
+  /**
    * The project board: `create`, a project URL, or `false` to not ask. Absent: offer one if
    * the repository has none and someone is there to answer.
    */
   projectBoard?: string | false
+  /** Commit the board setting to the repository (`.claude/sessionstat.json`). Absent: ask. */
+  shareBoard?: boolean
+  /**
+   * Write the default template out to edit: `repo` (`.claude/sessionstat.md`, shared), `home`
+   * (`~/.sessionstat/template.md`) or `none`. Absent: ask, if someone can answer; else none.
+   */
+  template?: TemplateChoice
 }
+
+export type TemplateChoice = 'repo' | 'home' | 'none'
 
 export const NOT_IN_REPO =
   'Not inside a git repository. Run it in the repo you want, or use --global to install everywhere'
 
 /** One plain sentence saying where the hooks now run. */
-export function scopeSentence(repoRoot: string | null): string {
+export function scopeSentence(repoRoot: string | null, team = false): string {
+  if (team && repoRoot) return `Installed for everyone working in ${repoRoot}`
   return repoRoot
     ? `Installed for ${repoRoot} only`
     : 'Installed globally: runs in every repository'
 }
 
+/**
+ * The team hook command: committed, so it cannot name a path on this machine. A copy installed
+ * in the repository (a devDependency, so the team pins the version) wins, then one on PATH;
+ * with neither it does nothing, so a teammate without sessionstat sees no errors. Not npx: it
+ * adds seconds to every hook. The trailing comment keeps `isSessionstatCommand` matching it.
+ */
+export const TEAM_HOOK_COMMAND =
+  'b="$CLAUDE_PROJECT_DIR/node_modules/.bin/sessionstat"; if [ -x "$b" ]; then "$b" hook; elif command -v sessionstat >/dev/null 2>&1; then sessionstat hook; fi # sessionstat hook'
+
+const yes = (answer: string) => /^y(es)?$/i.test(answer.trim())
+
 export interface SetupResult {
   ok: boolean
   checks: CheckLine[]
   settingsPath: string
-  templatePath: string
+  /** The template in effect after setup; null for the built-in one. */
+  templatePath: string | null
   hookCommand: string
 }
 
@@ -135,15 +163,18 @@ export async function copyTemplateIfAbsent(path: string): Promise<boolean> {
 /**
  * Remove our hooks from locations that are dead or that would double up with the one just
  * installed. Adapted from guidemode's `cleanupStaleHookLocations`: only places Claude Code would
- * never read (the user-level `settings.local.json`) or the same repository's other settings
- * file. A live install in the OTHER scope is warned about, not removed — it is the user's.
+ * never read (the user-level `settings.local.json`), or, for a team install, this repository's
+ * personal file, which the team hooks replace. The committed team file is the team's, so a
+ * personal install only warns about it, as it does about a global install.
  */
 export async function cleanupStaleHookLocations(
   installedPath: string,
   repoRoot: string | null
 ): Promise<string[]> {
   const candidates = new Set<string>([paths.legacyUserSettings()])
-  if (repoRoot) candidates.add(join(repoRoot, '.claude', 'settings.json'))
+  if (repoRoot && installedPath === teamSettingsPath(repoRoot)) {
+    candidates.add(projectSettingsPath(repoRoot))
+  }
   candidates.delete(installedPath)
   const cleaned: string[] = []
   for (const path of candidates) {
@@ -156,16 +187,51 @@ export async function cleanupStaleHookLocations(
   return cleaned
 }
 
-/** Every project-scope settings file that has our hooks, from config plus the given repo. */
+/**
+ * Every repository-scope settings file (personal or team) that has our hooks, from config plus
+ * the given repo.
+ */
 export async function projectInstallsWithHooks(extraRepo?: string | null): Promise<string[]> {
   const config = await loadConfig()
   const repos = new Set(config.projectInstalls ?? [])
   if (extraRepo) repos.add(extraRepo)
   const found: string[] = []
   for (const repo of repos) {
-    if (await hasHooksInstalled(projectSettingsPath(repo))) found.push(repo)
+    for (const path of [projectSettingsPath(repo), teamSettingsPath(repo)]) {
+      if (await hasHooksInstalled(path)) found.push(path)
+    }
   }
   return found
+}
+
+/** Ask the walkthrough's questions that flags did not answer. Nobody to ask: the defaults. */
+async function askChoices(
+  options: SetupOptions,
+  repoRoot: string | null,
+  ask: SetupDeps['ask']
+): Promise<{ team: boolean; template: TemplateChoice }> {
+  let team = !!repoRoot && !!options.team
+  if (repoRoot && options.team === undefined && ask) {
+    team = yes(
+      await ask(
+        `Post session stats for everyone working in ${repoRoot} (writes .claude/settings.json, to commit)? [y/N] `
+      )
+    )
+  }
+  let template: TemplateChoice = options.template ?? 'none'
+  if (options.template === undefined && ask) {
+    const current = await resolveTemplate(repoRoot)
+    if (current.source === 'default' && yes(await ask('Customise the comment template? [y/N] '))) {
+      if (!repoRoot) template = 'home'
+      else {
+        const where = await ask(
+          'For this repository, shared (.claude/sessionstat.md), or just for you everywhere (~/.sessionstat/template.md)? [repo/home] '
+        )
+        template = /^h/i.test(where.trim()) ? 'home' : 'repo'
+      }
+    }
+  }
+  return { team, template }
 }
 
 export async function runSetup(options: SetupOptions, deps: SetupDeps): Promise<SetupResult> {
@@ -183,6 +249,9 @@ export async function runSetup(options: SetupOptions, deps: SetupDeps): Promise<
   if (options.global && options.path) {
     return refuse('--global installs for every repository, so it takes no path')
   }
+  if (options.global && options.team) {
+    return refuse('--global and --team are different scopes; pick one')
+  }
   let repoRoot: string | null = null
   if (!options.global) {
     const dir = resolve(cwd, options.path ?? '.')
@@ -194,6 +263,8 @@ export async function runSetup(options: SetupOptions, deps: SetupDeps): Promise<
       return refuse(options.path ? `${dir}: ${NOT_IN_REPO}` : NOT_IN_REPO)
     }
   }
+
+  const choices = await askChoices(options, repoRoot, deps.ask)
 
   // ── Tools ────────────────────────────────────────────────────────────────
   const git = await deps.run('git', ['--version'], { timeoutMs: 5000 })
@@ -238,14 +309,19 @@ export async function runSetup(options: SetupOptions, deps: SetupDeps): Promise<
         }
   )
 
-  const settingsPath = repoRoot ? projectSettingsPath(repoRoot) : paths.userSettings()
+  const settingsPath = !repoRoot
+    ? paths.userSettings()
+    : choices.team
+      ? teamSettingsPath(repoRoot)
+      : projectSettingsPath(repoRoot)
+  const command = choices.team ? TEAM_HOOK_COMMAND : hook.command
 
   // ── Hooks: write, then read back ─────────────────────────────────────────
   let before: Record<string, unknown> | null = null
   let installed = false
   try {
     before = await readSettings(settingsPath)
-    await installHooks(settingsPath, hook.command)
+    await installHooks(settingsPath, command)
     const after = await readSettings(settingsPath)
     const events = await installedEvents(settingsPath)
     const missing = HOOK_EVENTS.filter(e => !events.includes(e))
@@ -279,6 +355,15 @@ export async function runSetup(options: SetupOptions, deps: SetupDeps): Promise<
     await updateConfig({
       projectInstalls: [...new Set([...(config.projectInstalls ?? []), repoRoot])],
     })
+    if (!choices.team && (await hasHooksInstalled(teamSettingsPath(repoRoot)))) {
+      checks.push({
+        ok: true,
+        warn: true,
+        label: `Also installed for the team (${teamSettingsPath(repoRoot)})`,
+        detail: 'Each event fires twice; sessionstat de-duplicates them, but one scope is enough',
+        fix: 'sessionstat uninstall   # to drop your personal hooks and keep the team ones',
+      })
+    }
     if (await hasHooksInstalled(paths.userSettings())) {
       checks.push({
         ok: true,
@@ -290,29 +375,49 @@ export async function runSetup(options: SetupOptions, deps: SetupDeps): Promise<
       })
     }
   } else {
-    const repos = await projectInstallsWithHooks(await repoRootOf(deps.run, cwd))
-    for (const repo of repos) {
+    const files = await projectInstallsWithHooks(await repoRootOf(deps.run, cwd))
+    for (const file of files) {
+      const repo = dirname(dirname(file))
+      const team = file === teamSettingsPath(repo)
       checks.push({
         ok: true,
         warn: true,
-        label: `Also installed in ${projectSettingsPath(repo)}`,
+        label: `Also installed in ${file}`,
         detail: 'Each event fires twice there; sessionstat de-duplicates them',
-        fix: `sessionstat uninstall ${shellQuote(repo)}   # the global install covers it`,
+        ...(team
+          ? {}
+          : { fix: `sessionstat uninstall ${shellQuote(repo)}   # the global install covers it` }),
       })
     }
   }
 
   // ── Template ─────────────────────────────────────────────────────────────
-  const templatePath = repoRoot ? repoTemplatePath(repoRoot) : paths.homeTemplate()
-  try {
-    const copied = await copyTemplateIfAbsent(templatePath)
+  // Nothing is written unless asked for: the built-in template is the default.
+  let templatePath: string | null = null
+  if (choices.template !== 'none') {
+    const target =
+      choices.template === 'repo' && repoRoot ? repoTemplatePath(repoRoot) : paths.homeTemplate()
+    try {
+      const copied = await copyTemplateIfAbsent(target)
+      templatePath = target
+      checks.push({
+        ok: true,
+        label: copied ? `Template written to ${target}` : `Template kept: ${target}`,
+        detail: 'Edit this to change what is posted; `sessionstat template vars` shows the fields',
+      })
+    } catch (err) {
+      checks.push({ ok: false, label: `Could not write ${target}`, detail: String(err) })
+    }
+  } else {
+    const current = await resolveTemplate(repoRoot)
+    templatePath = current.path
     checks.push({
       ok: true,
-      label: copied ? `Template written to ${templatePath}` : `Template kept: ${templatePath}`,
-      detail: 'Edit this to change what is posted; `sessionstat template vars` shows the fields',
+      label: current.path ? `Template: ${current.path}` : 'Template: the built-in default',
+      ...(current.path
+        ? {}
+        : { detail: '`sessionstat template init` (or `--repo`) writes it out to customise' }),
     })
-  } catch (err) {
-    checks.push({ ok: false, label: `Could not write ${templatePath}`, detail: String(err) })
   }
 
   // ── Skill ────────────────────────────────────────────────────────────────
@@ -333,7 +438,12 @@ export async function runSetup(options: SetupOptions, deps: SetupDeps): Promise<
   if (boardRepo && options.projectBoard !== false) {
     try {
       const board = await setupBoard(
-        { repoRoot: boardRepo, choice: options.projectBoard, global: !repoRoot },
+        {
+          repoRoot: boardRepo,
+          choice: options.projectBoard,
+          share: repoRoot ? options.shareBoard : false,
+          shareDefault: choices.team,
+        },
         { run: deps.run, ask: deps.ask }
       )
       for (const check of board.checks) {
@@ -354,10 +464,25 @@ export async function runSetup(options: SetupOptions, deps: SetupDeps): Promise<
   printChecklist(
     out,
     checks,
-    installed ? scopeSentence(repoRoot) : `Not installed (${settingsPath} was not updated)`
+    installed
+      ? scopeSentence(repoRoot, choices.team)
+      : `Not installed (${settingsPath} was not updated)`
   )
+  if (installed && repoRoot) {
+    const shared = [
+      teamSettingsPath(repoRoot),
+      repoTemplatePath(repoRoot),
+      repoSettingsPath(repoRoot),
+    ]
+    const toCommit: string[] = []
+    for (const path of shared) {
+      if (path === teamSettingsPath(repoRoot) && !choices.team) continue
+      if (await exists(path)) toCommit.push(path.slice(repoRoot.length + 1))
+    }
+    if (toCommit.length > 0) out(`  Commit to share with the team: ${toCommit.join(', ')}`)
+  }
   const ok = checks.every(c => c.ok)
-  return { ok, checks, settingsPath, templatePath, hookCommand: hook.command }
+  return { ok, checks, settingsPath, templatePath, hookCommand: command }
 }
 
 export function printChecklist(

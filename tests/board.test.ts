@@ -1,10 +1,16 @@
-import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { loadBoardCache, syncBoard } from '../src/board/board.js'
 import { fieldValues, mainModel } from '../src/board/fields.js'
-import { parseProjectUrl, repoSettingsPath, repoSlug } from '../src/board/settings.js'
+import {
+  loadBoardSettings,
+  parseProjectUrl,
+  repoSettingsPath,
+  repoSlug,
+} from '../src/board/settings.js'
 import { setupBoard } from '../src/board/setup.js'
+import { loadConfig } from '../src/config.js'
 import { MARKER } from '../src/gh.js'
 import { postForBranch } from '../src/post.js'
 import { recordSession } from '../src/sessions.js'
@@ -239,6 +245,7 @@ describe('posting with a board', () => {
       head: 'aaaa',
       openedBeforePr: false,
     })
+    await mkdir(dirname(repoSettingsPath(repo)), { recursive: true })
     await writeFile(repoSettingsPath(repo), JSON.stringify({ board: BOARD }))
   })
 
@@ -293,19 +300,41 @@ describe('board setup', () => {
     }
   }
 
-  it('walks through creating the board: fields, link, saved setting', async () => {
+  it('walks through creating the board: fields, link, setting saved in config.json', async () => {
     const { projects, run } = setupRunner()
-    const { ask, asked } = answers('y', '')
+    const { ask, asked } = answers('y', '', '')
     const result = await setupBoard({ repoRoot: repo }, { run, ask })
 
-    expect(asked).toHaveLength(2)
+    expect(asked).toHaveLength(3)
     expect(result.ok).toBe(true)
     const [project] = projects.state.projects
     expect(project.title).toBe('sessionstat: acme/app')
     expect(project.linked).toEqual(['R_app'])
     expect(project.fields.map(f => f.name)).toContain('Agent sessions')
+    expect((await loadConfig()).boards?.['acme/app']).toMatchObject({
+      owner: 'acme',
+      number: 1,
+      url: project.url,
+    })
+    await expect(stat(repoSettingsPath(repo))).rejects.toThrow()
+    await expect(stat(join(repo, '.sessionstat.json'))).rejects.toThrow()
+  })
+
+  it('shares the setting in .claude/sessionstat.json when asked to', async () => {
+    const { projects, run } = setupRunner()
+    const result = await setupBoard({ repoRoot: repo }, { run, ...answers('y', '', 'y') })
+    expect(result.ok).toBe(true)
     const saved = JSON.parse(await readFile(repoSettingsPath(repo), 'utf-8'))
-    expect(saved.board).toMatchObject({ owner: 'acme', number: 1, url: project.url })
+    expect(saved.board).toMatchObject({ owner: 'acme', number: 1 })
+    expect(repoSettingsPath(repo)).toBe(join(repo, '.claude', 'sessionstat.json'))
+    expect((await loadConfig()).boards).toBeUndefined()
+    expect(projects.state.projects).toHaveLength(1)
+  })
+
+  it('still reads a board from the older <repo>/.sessionstat.json', async () => {
+    await writeFile(join(repo, '.sessionstat.json'), JSON.stringify({ board: BOARD }))
+    const loaded = await loadBoardSettings(repo, 'acme/app')
+    expect(loaded).toEqual({ board: BOARD, source: join(repo, '.sessionstat.json') })
   })
 
   it('reuses an existing board of the same name rather than making a second', async () => {
@@ -349,6 +378,7 @@ describe('board setup', () => {
   it('re-checks an existing board instead of asking', async () => {
     const { projects, run } = setupRunner()
     const project = projects.addProject('acme', 7)
+    await mkdir(dirname(repoSettingsPath(repo)), { recursive: true })
     await writeFile(repoSettingsPath(repo), JSON.stringify({ board: BOARD }))
     const { ask, asked } = answers()
     const result = await setupBoard({ repoRoot: repo }, { run, ask })

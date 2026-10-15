@@ -59,11 +59,19 @@ ${commands}
 
 ## Install scopes
 
-- **One repository** (the default): \`sessionstat setup [path]\` installs into the repository
-  containing \`path\` (default: the working directory). Hooks go in
-  \`<repo>/.claude/settings.local.json\`, and the default template is copied to
-  \`<repo>/.sessionstat.md\` if there is none. Run outside a git repository, setup refuses
-  rather than installing globally.
+- **One repository, just you** (the default): \`sessionstat setup [path]\` installs into the
+  repository containing \`path\` (default: the working directory). Hooks go in
+  \`<repo>/.claude/settings.local.json\` (personal, not committed). Nothing else is written
+  into the repository. Run outside a git repository, setup refuses rather than installing
+  globally.
+- **One repository, the whole team**: \`sessionstat setup --team\` puts the hooks in the
+  committed \`<repo>/.claude/settings.json\`. The command there uses
+  \`node_modules/.bin/sessionstat\` if the repository has it as a dependency, else
+  \`sessionstat\` on PATH, else does nothing, so teammates without it see no errors. Each
+  teammate still needs \`gh\` logged in. \`sessionstat uninstall --team\` removes it.
+- In a terminal, setup asks: install for the team? set up a project board (and share its
+  setting)? write the template out to customise? \`--team\`, \`--project-board\` /
+  \`--no-project-board\`, \`--share-board\` and \`--template repo|home|none\` answer them.
 - **Global**, only when asked: \`sessionstat setup --global\` puts the hooks in
   \`~/.claude/settings.json\`, so they run in **every** repository. Never suggest it unless
   the user wants that.
@@ -82,7 +90,8 @@ ${commands}
 
 The comment is a [Mustache](https://mustache.github.io/mustache.5.html) template. First match wins:
 
-1. \`<repo>/.sessionstat.md\` — per repository (can be committed, so the team shares it)
+1. \`<repo>/.claude/sessionstat.md\` — per repository, committed so the team shares it
+   (the older \`<repo>/.sessionstat.md\` is still read)
 2. \`~/.sessionstat/template.md\` — the user's own default
 3. the template built into sessionstat
 
@@ -120,9 +129,10 @@ chart agent effort across PRs with GitHub's table views and Insights.
   <project-url>\` uses an existing project. Fields are created if missing, matched by name; a
   same-named field of another type is left alone. It needs the \`project\` scope:
   \`gh auth refresh -s project\` (the user must run this themselves; it opens a browser).
-- **The setting** is \`{"board": {"owner", "number", "prefix"?, "fields"?}}\` in
-  \`<repo>/.sessionstat.json\` (committable), or under \`boards["owner/repo"]\` in config.json
-  for a global install. \`prefix\` defaults to \`Agent \`; \`fields\` is a list of keys (see
+- **The setting** is \`{"owner", "number", "prefix"?, "fields"?}\` under
+  \`boards["owner/repo"]\` in config.json, or, shared with the team, \`{"board": {…}}\` in
+  \`<repo>/.claude/sessionstat.json\` (\`board setup --repo\`; the older
+  \`<repo>/.sessionstat.json\` is still read). The repository file wins. \`prefix\` defaults to \`Agent \`; \`fields\` is a list of keys (see
   \`sessionstat board status\`) to keep, all by default.
 - **When it updates.** Right after a comment is created or updated, in the same background
   worker. Values are totals over every sessionstat comment on the PR, all authors, recomputed
@@ -139,8 +149,8 @@ chart agent effort across PRs with GitHub's table views and Insights.
 | \`notice\` | \`true\` | Show the "sessionstat: stats for this session will be added to the PR for …" line at the start of a session. \`sessionstat config notice off\` sets it to \`false\` |
 | \`enabled\` | \`true\` | \`false\` turns sessionstat off everywhere (\`sessionstat disable --global\`) |
 | \`disabledRepos\` | \`[]\` | Repository roots where it is off (\`sessionstat disable\` inside the repo) |
-| \`projectInstalls\` | \`[]\` | Repositories with a project-scope install, kept by setup |
-| \`boards\` | \`{}\` | Project boards by \`owner/repo\` for repositories without a \`.sessionstat.json\` |
+| \`projectInstalls\` | \`[]\` | Repositories with a per-repository or team install, kept by setup |
+| \`boards\` | \`{}\` | Project boards by \`owner/repo\`, unless the repository shares one in \`.claude/sessionstat.json\` |
 
 ## Troubleshooting: "no stats comment on my PR"
 

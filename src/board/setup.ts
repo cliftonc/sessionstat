@@ -30,8 +30,13 @@ export interface BoardSetupOptions {
   repoRoot: string
   /** `create`, a project URL, or absent to ask (if anyone can answer). */
   choice?: string
-  /** Save to config.json (a global install) instead of `<repo>/.sessionstat.json`. */
-  global?: boolean
+  /**
+   * Save to `<repo>/.claude/sessionstat.json`, to commit so the team shares the board, rather
+   * than `~/.sessionstat/config.json`. Absent: ask (default `shareDefault`), or config.json.
+   */
+  share?: boolean
+  /** The answer when asking whether to share. Default no. */
+  shareDefault?: boolean
 }
 
 export type ScopeCheck = 'ok' | 'missing' | 'unknown'
@@ -149,7 +154,15 @@ export async function setupBoard(
   if (!fetched) return done()
   board.url = fetched
 
-  const where = options.global ? { slug } : { repoRoot }
+  let share = options.share
+  if (share === undefined && existing?.source.startsWith(repoRoot)) share = true
+  if (share === undefined && deps.ask) {
+    const answer = await deps.ask(
+      `Share the board setting with everyone in ${slug} (writes .claude/sessionstat.json, to commit)? ${options.shareDefault ? '[Y/n]' : '[y/N]'} `
+    )
+    share = answer.trim() ? yes(answer) : !!options.shareDefault
+  }
+  const where = share ? { repoRoot } : { slug }
   const saved = await saveBoardSettings(where, board)
   checks.push({
     ok: true,

@@ -36,11 +36,22 @@ export const paths = {
   skillFile: () => join(home(), '.claude', 'skills', 'sessionstat', 'SKILL.md'),
 }
 
-/** Project scope: the same file guidemode's `projectHooksPath` uses. */
+/** Project scope: the same file guidemode's `projectHooksPath` uses. Personal, not committed. */
 export function projectSettingsPath(repoRoot: string): string {
   return join(repoRoot, '.claude', 'settings.local.json')
 }
 
+/** Team scope: Claude Code's committed project settings, so the hooks run for everyone. */
+export function teamSettingsPath(repoRoot: string): string {
+  return join(repoRoot, '.claude', 'settings.json')
+}
+
+/** A template the team shares. Only written on request (`template init --repo`). */
 export function repoTemplatePath(repoRoot: string): string {
+  return join(repoRoot, '.claude', 'sessionstat.md')
+}
+
+/** Where older versions copied the template; still read, never written. */
+export function legacyRepoTemplatePath(repoRoot: string): string {
   return join(repoRoot, '.sessionstat.md')
 }

@@ -1,11 +1,12 @@
-import { chmod, mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { repoSettingsPath } from '../src/board/settings.js'
 import { loadConfig } from '../src/config.js'
-import { paths, projectSettingsPath, repoTemplatePath } from '../src/paths.js'
+import { paths, projectSettingsPath, repoTemplatePath, teamSettingsPath } from '../src/paths.js'
 import type { RunResult } from '../src/runner.js'
-import { hasHooksInstalled, installHooks } from '../src/settings.js'
-import { NOT_IN_REPO, type SetupOptions, runSetup } from '../src/setup.js'
+import { hasHooksInstalled, installHooks, isSessionstatCommand } from '../src/settings.js'
+import { NOT_IN_REPO, type SetupOptions, TEAM_HOOK_COMMAND, runSetup } from '../src/setup.js'
 import { installedSkillVersion } from '../src/skill.js'
 import { runStatus } from '../src/status.js'
 import { DEFAULT_TEMPLATE } from '../src/template/render.js'
@@ -57,7 +58,12 @@ function runner(opts: { gh?: 'ok' | 'missing' | 'logged-out'; which?: boolean } 
   })
 }
 
-async function setup(options: SetupOptions = {}, run = runner(), cwd = repo) {
+async function setup(
+  options: SetupOptions = {},
+  run = runner(),
+  cwd = repo,
+  ask?: (question: string) => Promise<string>
+) {
   const lines: string[] = []
   const result = await runSetup(options, {
     run,
@@ -66,8 +72,28 @@ async function setup(options: SetupOptions = {}, run = runner(), cwd = repo) {
     cwd,
     entry: join(env.home, 'bin', 'sessionstat'),
     nodePath: '/usr/local/bin/node',
+    ask,
   })
   return { result, output: lines.join('\n') }
+}
+
+/** Scripted answers, in order; records each question. */
+function answers(...replies: string[]) {
+  const asked: string[] = []
+  const ask = async (q: string) => {
+    asked.push(q)
+    return replies.shift() ?? ''
+  }
+  return { asked, ask }
+}
+
+/** Every file under `dir`, relative to it. */
+async function filesIn(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { recursive: true, withFileTypes: true })
+  return entries
+    .filter(e => e.isFile())
+    .map(e => join(e.parentPath, e.name).slice(dir.length + 1))
+    .sort()
 }
 
 const readJson = async (p: string) => JSON.parse(await readFile(p, 'utf-8'))
@@ -112,14 +138,22 @@ describe('sessionstat setup (global)', () => {
     expect(await readFile(paths.userSettings(), 'utf-8')).toBe(first)
   })
 
-  it('copies the default template once and never overwrites it', async () => {
-    const { output } = await setup({ global: true })
+  it('writes no template unless asked to', async () => {
+    const { result, output } = await setup({ global: true })
+    await expect(stat(paths.homeTemplate())).rejects.toThrow()
+    expect(result.templatePath).toBeNull()
+    expect(output).toContain('Template: the built-in default')
+    expect(output).toContain('`sessionstat template init` (or `--repo`)')
+  })
+
+  it('with --template home, copies the default once and never overwrites it', async () => {
+    const { output } = await setup({ global: true, template: 'home' })
     expect(await readFile(paths.homeTemplate(), 'utf-8')).toBe(DEFAULT_TEMPLATE)
     expect(output).toContain(`Template written to ${paths.homeTemplate()}`)
     expect(output).toContain('`sessionstat template vars` shows the fields')
 
     await writeFile(paths.homeTemplate(), 'MINE')
-    const again = await setup({ global: true })
+    const again = await setup({ global: true, template: 'home' })
     expect(await readFile(paths.homeTemplate(), 'utf-8')).toBe('MINE')
     expect(again.output).toContain(`Template kept: ${paths.homeTemplate()}`)
   })
@@ -208,8 +242,14 @@ describe('sessionstat setup (per repository, the default)', () => {
     expect(await hasHooksInstalled(projectSettingsPath(repo))).toBe(true)
     await expect(stat(paths.userSettings())).rejects.toThrow()
     expect((await loadConfig()).projectInstalls).toEqual([repo])
-    expect(output).toContain(`Template written to ${repoTemplatePath(repo)}`)
+    expect(output).toContain('Template: the built-in default')
     expect(output).toContain(`Installed for ${repo} only.`)
+    expect(output).not.toContain('Commit to share')
+  })
+
+  it('writes nothing in the repository but its own settings.local.json', async () => {
+    await setup()
+    expect(await filesIn(repo)).toEqual(['.claude/settings.local.json'])
   })
 
   it('installs into the repository containing a path', async () => {
@@ -218,11 +258,23 @@ describe('sessionstat setup (per repository, the default)', () => {
     await expect(stat(paths.userSettings())).rejects.toThrow()
   })
 
-  it('copies the template into the repository, never over an existing one', async () => {
+  it('with --template repo, writes .claude/sessionstat.md, never over an existing one', async () => {
+    const { output } = await setup({ template: 'repo' })
+    expect(repoTemplatePath(repo)).toBe(join(repo, '.claude', 'sessionstat.md'))
+    expect(await readFile(repoTemplatePath(repo), 'utf-8')).toBe(DEFAULT_TEMPLATE)
+    expect(output).toContain('Commit to share with the team: .claude/sessionstat.md')
+
     await writeFile(repoTemplatePath(repo), 'TEAM TEMPLATE')
-    await setup()
+    await setup({ template: 'repo' })
     expect(await readFile(repoTemplatePath(repo), 'utf-8')).toBe('TEAM TEMPLATE')
     await expect(stat(paths.homeTemplate())).rejects.toThrow()
+  })
+
+  it('reports a template the repository already has, including the older root file', async () => {
+    await writeFile(join(repo, '.sessionstat.md'), 'OLD')
+    const { result, output } = await setup()
+    expect(result.templatePath).toBe(join(repo, '.sessionstat.md'))
+    expect(output).toContain(`Template: ${join(repo, '.sessionstat.md')}`)
   })
 
   it('still installs the skill globally', async () => {
@@ -255,6 +307,89 @@ describe('sessionstat setup (per repository, the default)', () => {
   })
 })
 
+describe('sessionstat setup --team', () => {
+  it('installs a portable command into the committed .claude/settings.json', async () => {
+    const { result, output } = await setup({ team: true })
+    expect(result.ok).toBe(true)
+    expect(result.settingsPath).toBe(teamSettingsPath(repo))
+    expect(result.hookCommand).toBe(TEAM_HOOK_COMMAND)
+    const settings = await readJson(teamSettingsPath(repo))
+    expect(settings.hooks.Stop[0].hooks[0].command).toBe(TEAM_HOOK_COMMAND)
+    expect(TEAM_HOOK_COMMAND).not.toContain(env.home)
+    expect(TEAM_HOOK_COMMAND).not.toContain('npx')
+    expect(isSessionstatCommand(TEAM_HOOK_COMMAND)).toBe(true)
+    await expect(stat(projectSettingsPath(repo))).rejects.toThrow()
+    expect(output).toContain(`Installed for everyone working in ${repo}.`)
+    expect(output).toContain('Commit to share with the team: .claude/settings.json')
+  })
+
+  it('replaces this repository’s personal hooks, which would double up', async () => {
+    await setup()
+    const { output } = await setup({ team: true })
+    expect(await hasHooksInstalled(projectSettingsPath(repo))).toBe(false)
+    expect(output).toContain(`Removed stale hooks from ${projectSettingsPath(repo)}`)
+  })
+
+  it('a later personal install leaves the team hooks alone, and warns', async () => {
+    await setup({ team: true })
+    const { output } = await setup({ team: false })
+    expect(await hasHooksInstalled(teamSettingsPath(repo))).toBe(true)
+    expect(output).toContain(`! Also installed for the team (${teamSettingsPath(repo)})`)
+  })
+
+  it('refuses together with --global', async () => {
+    const { result, output } = await setup({ team: true, global: true })
+    expect(result.ok).toBe(false)
+    expect(output).toContain('pick one')
+  })
+})
+
+describe('sessionstat setup walkthrough', () => {
+  it('says no to everything: only settings.local.json in the repository', async () => {
+    const { asked, ask } = answers('', '')
+    await setup({ projectBoard: false }, runner(), repo, ask)
+    expect(asked).toHaveLength(2)
+    expect(asked[0]).toContain('for everyone working in')
+    expect(asked[1]).toContain('Customise the comment template?')
+    expect(await filesIn(repo)).toEqual(['.claude/settings.local.json'])
+  })
+
+  it('says yes: team hooks and a shared template', async () => {
+    const { asked, ask } = answers('y', 'y', 'repo')
+    const { output } = await setup({ projectBoard: false }, runner(), repo, ask)
+    expect(asked).toHaveLength(3)
+    expect(await filesIn(repo)).toEqual(['.claude/sessionstat.md', '.claude/settings.json'])
+    expect(output).toContain(
+      'Commit to share with the team: .claude/settings.json, .claude/sessionstat.md'
+    )
+  })
+
+  it('a template for just you goes in ~/.sessionstat', async () => {
+    await setup({ projectBoard: false }, runner(), repo, answers('', 'y', 'home').ask)
+    expect(await readFile(paths.homeTemplate(), 'utf-8')).toBe(DEFAULT_TEMPLATE)
+    await expect(stat(repoTemplatePath(repo))).rejects.toThrow()
+  })
+
+  it('does not offer a template when one is already in effect', async () => {
+    await mkdir(paths.homeTemplate().replace(/\/template\.md$/, ''), { recursive: true })
+    await writeFile(paths.homeTemplate(), 'MINE')
+    const { asked, ask } = answers('')
+    await setup({ projectBoard: false }, runner(), repo, ask)
+    expect(asked).toHaveLength(1)
+  })
+
+  it('flags answer the questions', async () => {
+    const { asked, ask } = answers()
+    await setup({ projectBoard: false, team: false, template: 'none' }, runner(), repo, ask)
+    expect(asked).toEqual([])
+  })
+
+  it('the board setting is not shared unless asked', async () => {
+    await setup({ projectBoard: false })
+    await expect(stat(repoSettingsPath(repo))).rejects.toThrow()
+  })
+})
+
 describe('sessionstat uninstall', () => {
   async function uninstall(options: UninstallOptions = {}, cwd = repo) {
     const lines: string[] = []
@@ -276,8 +411,25 @@ describe('sessionstat uninstall', () => {
     const settings = await readJson(paths.userSettings())
     expect(settings).toEqual(USER_SETTINGS)
     await expect(stat(paths.skillFile())).rejects.toThrow()
-    // The template the user may have edited is kept.
+  })
+
+  it('keeps a template the user may have edited', async () => {
+    await setup({ global: true, template: 'home' })
+    await uninstall({ global: true })
     expect(await readFile(paths.homeTemplate(), 'utf-8')).toBe(DEFAULT_TEMPLATE)
+  })
+
+  it('leaves the team hooks unless asked for --team', async () => {
+    await setup({ team: true })
+    const personal = await uninstall()
+    expect(personal.result.removedFrom).toEqual([])
+    expect(personal.output).toContain('The team install remains')
+    expect(await hasHooksInstalled(teamSettingsPath(repo))).toBe(true)
+
+    const team = await uninstall({ team: true })
+    expect(team.result.removedFrom).toEqual([teamSettingsPath(repo)])
+    expect(team.result.skillRemoved).toBe(true)
+    expect((await loadConfig()).projectInstalls).toEqual([])
   })
 
   it('keeps the skill while another scope still has hooks', async () => {

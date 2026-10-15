@@ -145,6 +145,17 @@ describe('template precedence', () => {
     const { body: otherBody } = await render(await viewFor('claude-code-synthetic.jsonl'), other)
     expect(otherBody.startsWith(`${MARKER}\nHOME acme/app\n`)).toBe(true)
   })
+
+  it('.claude/sessionstat.md beats the older root .sessionstat.md', async () => {
+    await writeFile(join(repo, '.sessionstat.md'), 'OLD')
+    await mkdir(join(repo, '.claude'), { recursive: true })
+    await writeFile(join(repo, '.claude', 'sessionstat.md'), 'NEW')
+    expect(await resolveTemplate(repo)).toMatchObject({
+      source: 'repo',
+      path: join(repo, '.claude', 'sessionstat.md'),
+      template: 'NEW',
+    })
+  })
 })
 
 describe('a broken template', () => {

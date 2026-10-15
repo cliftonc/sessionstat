@@ -1,6 +1,6 @@
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { loadConfig, updateConfig } from './config.js'
-import { paths, projectSettingsPath } from './paths.js'
+import { paths, projectSettingsPath, teamSettingsPath } from './paths.js'
 import type { CommandRunner } from './runner.js'
 import { hasHooksInstalled, removeHooks } from './settings.js'
 import { projectInstallsWithHooks, repoRootOf } from './setup.js'
@@ -17,6 +17,8 @@ export interface UninstallOptions {
   path?: string
   /** Remove the user-level hooks, the ones that run in every repository. */
   global?: boolean
+  /** Remove the repository's team hooks (the committed `.claude/settings.json`) instead. */
+  team?: boolean
 }
 
 export const NOT_IN_REPO_UNINSTALL =
@@ -53,6 +55,10 @@ export async function runUninstall(
     }
   }
 
+  if (options.global && options.team) {
+    out('sessionstat: --global and --team are different scopes; pick one')
+    return { ok: false, removedFrom, skillRemoved: false, stillInstalled: [] }
+  }
   if (options.global && options.path) {
     out('sessionstat: --global removes the hooks for every repository, so it takes no path')
     return { ok: false, removedFrom, skillRemoved: false, stillInstalled: [] }
@@ -68,27 +74,36 @@ export async function runUninstall(
       out(`sessionstat: ${options.path ? `${dir}: ` : ''}${NOT_IN_REPO_UNINSTALL}`)
       return { ok: false, removedFrom, skillRemoved: false, stillInstalled: [] }
     }
-    await tryRemove(projectSettingsPath(repoRoot))
-    await tryRemove(join(repoRoot, '.claude', 'settings.json'))
-    await updateConfig({
-      projectInstalls: (config.projectInstalls ?? []).filter(r => r !== repoRoot),
-    })
+    // The team file is shared, so it is only touched when asked for by name.
+    await tryRemove(options.team ? teamSettingsPath(repoRoot) : projectSettingsPath(repoRoot))
+    const other = options.team ? projectSettingsPath(repoRoot) : teamSettingsPath(repoRoot)
+    if (!(await hasHooksInstalled(other))) {
+      await updateConfig({
+        projectInstalls: (config.projectInstalls ?? []).filter(r => r !== repoRoot),
+      })
+    }
     scopeRoot = repoRoot
   } else {
     await tryRemove(paths.userSettings())
     await tryRemove(paths.legacyUserSettings())
   }
 
-  const scope = options.global ? 'the global install' : `the install for ${scopeRoot}`
+  const scope = options.global
+    ? 'the global install'
+    : options.team
+      ? `the team install for ${scopeRoot}`
+      : `the install for ${scopeRoot}`
   for (const path of removedFrom) out(`✓ Removed sessionstat hooks from ${path}`)
   if (removedFrom.length > 0) out(`  Removed ${scope}.`)
   else out(`  No sessionstat hooks found for ${options.global ? 'the global scope' : scopeRoot}.`)
+  if (!options.global && !options.team && (await hasHooksInstalled(teamSettingsPath(scopeRoot)))) {
+    out(`! The team install remains (${teamSettingsPath(scopeRoot)}): it runs for everyone in`)
+    out('  this repository. sessionstat uninstall --team removes it (commit the change).')
+  }
 
   const stillInstalled: string[] = []
   if (await hasHooksInstalled(paths.userSettings())) stillInstalled.push(paths.userSettings())
-  for (const repo of await projectInstallsWithHooks()) {
-    stillInstalled.push(projectSettingsPath(repo))
-  }
+  stillInstalled.push(...(await projectInstallsWithHooks()))
 
   let skillRemoved = false
   const globalLeft = stillInstalled.includes(paths.userSettings())

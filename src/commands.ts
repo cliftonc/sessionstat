@@ -15,15 +15,15 @@ export const COMMANDS: CommandDoc[] = [
   {
     name: 'setup',
     usage:
-      'sessionstat setup [path] [--global] [--project-board <url|create>] [--no-project-board]',
+      'sessionstat setup [path] [--global | --team] [--project-board <url|create>] [--no-project-board] [--share-board] [--template <repo|home|none>]',
     summary:
-      '(alias: install) Install the Claude Code hooks into the repository containing path (default: here) — or into every repository only with --global — plus the default template and the Claude skill, and check gh, git and the hook command. In a terminal it then offers to set up a GitHub Projects board for the repository; --project-board does it without asking, --no-project-board skips it',
+      '(alias: install) Install the Claude Code hooks into the repository containing path (default: here), just for you — or for everyone working in it with --team (.claude/settings.json, to commit), or into every repository only with --global — plus the Claude skill, and check gh, git and the hook command. Nothing else is written into the repository unless asked for. In a terminal it asks whether to install for the team, set up a GitHub Projects board (and share its setting) and write the template out to customise; the flags answer without asking',
   },
   {
     name: 'uninstall',
-    usage: 'sessionstat uninstall [path] [--global]',
+    usage: 'sessionstat uninstall [path] [--global | --team]',
     summary:
-      'Remove the hooks from the repository containing path (default: here), or the global hooks with --global; the skill goes too once no scope has hooks left',
+      'Remove your hooks from the repository containing path (default: here), its team hooks with --team, or the global hooks with --global; the skill goes too once no scope has hooks left',
   },
   {
     name: 'status',
@@ -44,9 +44,9 @@ export const COMMANDS: CommandDoc[] = [
   },
   {
     name: 'board setup',
-    usage: 'sessionstat board setup [url|create] [--global]',
+    usage: 'sessionstat board setup [url|create] [--repo]',
     summary:
-      'Set up the GitHub Projects board this repository’s PRs are mirrored to: create "sessionstat: owner/repo" or use an existing project, add the fields and link it to the repository. With no argument it checks the board already set up, or asks',
+      'Set up the GitHub Projects board this repository’s PRs are mirrored to: create "sessionstat: owner/repo" or use an existing project, add the fields and link it to the repository. Saved in ~/.sessionstat/config.json, or with --repo in .claude/sessionstat.json to commit for the team. With no argument it checks the board already set up, or asks',
   },
   {
     name: 'board status',
@@ -64,7 +64,7 @@ export const COMMANDS: CommandDoc[] = [
     name: 'template init',
     usage: 'sessionstat template init [--repo] [--force]',
     summary:
-      'Write the default template to ~/.sessionstat/template.md, or <repo>/.sessionstat.md with --repo, to edit',
+      'Write the default template to ~/.sessionstat/template.md, or <repo>/.claude/sessionstat.md with --repo (shared with the team), to edit',
   },
   {
     name: 'template vars',
