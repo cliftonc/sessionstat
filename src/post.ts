@@ -344,6 +344,12 @@ async function updateBoard(
   const slug = repoSlug(records.find(r => r.remote)?.remote)
   if (!slug) return undefined
   const settings = await loadBoardSettings(repoRoot, slug)
+  if (settings?.pending) {
+    await log(
+      'INFO',
+      `Not writing to the project board in ${repoRoot} until it is accepted: sessionstat board setup`
+    )
+  }
   if (!settings) return undefined
   if (!pr.id) {
     await log('WARN', `No node id for ${pr.url}; cannot add it to the project board`)

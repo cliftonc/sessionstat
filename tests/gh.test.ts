@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { MARKER, findOurComment, interpretPrView } from '../src/gh.js'
+import { MARKER, findOurComment, findPr, interpretPrView } from '../src/gh.js'
+import { fakeRunner } from './helpers.js'
 
 describe('finding our comment in gh api output', () => {
   const me = { login: 'alice' }
@@ -63,5 +64,24 @@ describe('gh pr view', () => {
     expect(interpretPrView({ ...res(-1, ''), notFound: true }).status).toBe('not-installed')
     expect(interpretPrView({ ...res(-1, ''), timedOut: true }).status).toBe('timeout')
     expect(interpretPrView(res(1, '', 'HTTP 502')).status).toBe('error')
+  })
+  it('keeps the branch behind -- so gh cannot read it as a flag', async () => {
+    const run = fakeRunner({
+      gh: () => ({ code: 1, stdout: '', stderr: 'no pull requests found' }),
+    })
+    await findPr(run, '/repo', { branch: 'feature/x' })
+    expect(run.calls[0].args).toEqual([
+      'pr',
+      'view',
+      '--json',
+      'id,number,url,headRefName,state,createdAt',
+      '--',
+      'feature/x',
+    ])
+  })
+  it('refuses a branch that starts with a dash, without running gh', async () => {
+    const run = fakeRunner({ gh: () => ({ code: 0, stdout: '{}', stderr: '' }) })
+    expect((await findPr(run, '/repo', { branch: '-Rattacker/evil' })).status).toBe('error')
+    expect(run.calls).toEqual([])
   })
 })

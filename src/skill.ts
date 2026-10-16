@@ -135,7 +135,9 @@ chart agent effort across PRs with GitHub's table views and Insights.
 - **The setting** is \`{"owner", "number", "prefix"?, "fields"?}\` under
   \`boards["owner/repo"]\` in config.json, or, shared with the team, \`{"board": {…}}\` in
   \`<repo>/.claude/sessionstat.json\` (\`board setup --repo\`; the older
-  \`<repo>/.sessionstat.json\` is still read). The repository file wins. \`prefix\` defaults to \`Agent \`; \`fields\` is a list of keys (see
+  \`<repo>/.sessionstat.json\` is still read). A board named by the repository file is not written
+  to until the user accepts it (\`sessionstat board setup\` asks, or takes the board's URL), which
+  copies it into their config.json; until then their own setting, if any, is used. \`prefix\` defaults to \`Agent \`; \`fields\` is a list of keys (see
   \`sessionstat board status\`) to keep, all by default.
 - **When it updates.** Right after a comment is created or updated, in the same background
   worker. Values are totals over every sessionstat comment on the PR, all authors, recomputed
@@ -153,7 +155,7 @@ chart agent effort across PRs with GitHub's table views and Insights.
 | \`enabled\` | \`true\` | \`false\` turns sessionstat off everywhere (\`sessionstat disable --global\`) |
 | \`disabledRepos\` | \`[]\` | Repository roots where it is off (\`sessionstat disable\` inside the repo) |
 | \`projectInstalls\` | \`[]\` | Repositories with a per-repository or team install, kept by setup |
-| \`boards\` | \`{}\` | Project boards by \`owner/repo\`, unless the repository shares one in \`.claude/sessionstat.json\` |
+| \`boards\` | \`{}\` | Project boards by \`owner/repo\`; a board shared in \`.claude/sessionstat.json\` is used only once it is here too |
 
 ## Troubleshooting: "no stats comment on my PR"
 

@@ -5,7 +5,7 @@ import { readPrState } from '../pr-state.js'
 import type { CommandRunner } from '../runner.js'
 import { type BoardOutcome, fetchProject, loadBoardCache, syncBoard } from './board.js'
 import { FIELDS, fieldValues } from './fields.js'
-import { loadBoardSettings, repoSlug } from './settings.js'
+import { type BoardSettings, loadBoardSettings, pendingSharedBoard, repoSlug } from './settings.js'
 import { SCOPE_FIX, checkProjectScope } from './setup.js'
 
 export interface BoardCommandDeps {
@@ -22,19 +22,27 @@ async function currentRepo(deps: BoardCommandDeps) {
   return { repoRoot: meta.toplevel, slug, branch: meta.branch }
 }
 
+const describe = (board: BoardSettings) => board.url ?? `${board.owner} #${board.number}`
+
 /** The project, its fields, the last sync and the token scope. Returns false if not healthy. */
 export async function runBoardStatus(deps: BoardCommandDeps): Promise<boolean> {
   const { repoRoot, slug } = await currentRepo(deps)
   const settings = await loadBoardSettings(repoRoot, slug)
+  const pending = await pendingSharedBoard(repoRoot, slug)
+  if (pending) {
+    deps.out(
+      `${pending.source} names the project board ${describe(pending.board)}, not used until you accept it: sessionstat board setup`
+    )
+  }
   if (!settings) {
-    deps.out(`No project board for ${slug}. Add one with: sessionstat board setup`)
+    if (!pending) deps.out(`No project board for ${slug}. Add one with: sessionstat board setup`)
     return true
   }
   const { board } = settings
   const scope = await checkProjectScope(deps.run)
   const cached = (await loadBoardCache())[slug]
   deps.out(`Project board for ${slug}`)
-  deps.out(`  project   ${board.url ?? `${board.owner} #${board.number}`}`)
+  deps.out(`  project   ${describe(board)}`)
   deps.out(`  setting   ${settings.source}`)
   deps.out(
     `  scope     ${scope === 'ok' ? 'project ✓' : scope === 'missing' ? `missing project — ${SCOPE_FIX}` : 'unknown (not a classic token); tried anyway'}`
@@ -74,8 +82,14 @@ export async function runBoardResync(
 ): Promise<BoardOutcome> {
   const { repoRoot, slug } = await currentRepo(deps)
   const settings = await loadBoardSettings(repoRoot, slug)
-  if (!settings)
-    throw new Error(`No project board for ${slug}. Add one with: sessionstat board setup`)
+  if (!settings) {
+    const pending = await pendingSharedBoard(repoRoot, slug)
+    throw new Error(
+      pending
+        ? `${pending.source} names a project board you have not accepted. Accept it with: sessionstat board setup`
+        : `No project board for ${slug}. Add one with: sessionstat board setup`
+    )
+  }
   const lookup = await findPr(
     deps.run,
     repoRoot,

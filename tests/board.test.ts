@@ -10,7 +10,7 @@ import {
   repoSlug,
 } from '../src/board/settings.js'
 import { setupBoard } from '../src/board/setup.js'
-import { loadConfig } from '../src/config.js'
+import { loadConfig, updateConfig } from '../src/config.js'
 import { MARKER } from '../src/gh.js'
 import { postForBranch } from '../src/post.js'
 import { recordSession } from '../src/sessions.js'
@@ -247,6 +247,7 @@ describe('posting with a board', () => {
     })
     await mkdir(dirname(repoSettingsPath(repo)), { recursive: true })
     await writeFile(repoSettingsPath(repo), JSON.stringify({ board: BOARD }))
+    await updateConfig({ boards: { 'acme/app': BOARD } })
   })
 
   it('writes the totals over every author’s sessions after posting', async () => {
@@ -266,6 +267,39 @@ describe('posting with a board', () => {
     expect(outcome.status).toBe('created')
     expect(outcome.status === 'created' && outcome.board?.status).toBe('updated')
     expect(projects.valuesFor(project, 'PR_7')?.['Agent sessions']).toBe(2)
+  })
+
+  it('writes nothing to a board the repository names that the user has not accepted', async () => {
+    // Someone's branch points the shared setting at another board, with their own prefix.
+    const evil = { owner: 'acme', number: 8, prefix: 'Pwned ' }
+    await writeFile(repoSettingsPath(repo), JSON.stringify({ board: evil }))
+    const projects = fakeProjects()
+    const own = projects.addProject('acme', 7)
+    const other = projects.addProject('acme', 8)
+    const github = fakeGitHub({ graphql: projects.graphql })
+
+    const outcome = await postForBranch(repo, 'feature/login', {
+      run: fakeRunner({ gh: github.gh }),
+    })
+    expect(outcome.status).toBe('created')
+    expect(other.fields.map(f => f.name)).not.toContain('Pwned sessions')
+    expect(projects.valuesFor(other, 'PR_7')).toBeUndefined()
+    // The user's own setting is still used.
+    expect(projects.valuesFor(own, 'PR_7')?.['Agent sessions']).toBe(1)
+  })
+
+  it('writes nothing when only the repository names a board', async () => {
+    await updateConfig({ boards: {} })
+    const projects = fakeProjects()
+    const project = projects.addProject('acme', 7)
+    const github = fakeGitHub({ graphql: projects.graphql })
+    const outcome = await postForBranch(repo, 'feature/login', {
+      run: fakeRunner({ gh: github.gh }),
+    })
+    expect(outcome.status).toBe('created')
+    expect(outcome.status === 'created' && outcome.board).toBeUndefined()
+    expect(projects.state.operations).toEqual([])
+    expect(project.fields.map(f => f.name)).toEqual(['Status'])
   })
 
   it('still posts the comment when the board cannot be written', async () => {
@@ -327,12 +361,14 @@ describe('board setup', () => {
     const saved = JSON.parse(await readFile(repoSettingsPath(repo), 'utf-8'))
     expect(saved.board).toMatchObject({ owner: 'acme', number: 1 })
     expect(repoSettingsPath(repo)).toBe(join(repo, '.claude', 'sessionstat.json'))
-    expect((await loadConfig()).boards).toBeUndefined()
+    // Kept in config.json too: that is what makes the shared file trusted here.
+    expect((await loadConfig()).boards?.['acme/app']).toMatchObject({ owner: 'acme', number: 1 })
     expect(projects.state.projects).toHaveLength(1)
   })
 
   it('still reads a board from the older <repo>/.sessionstat.json', async () => {
     await writeFile(join(repo, '.sessionstat.json'), JSON.stringify({ board: BOARD }))
+    await updateConfig({ boards: { 'acme/app': BOARD } })
     const loaded = await loadBoardSettings(repo, 'acme/app')
     expect(loaded).toEqual({ board: BOARD, source: join(repo, '.sessionstat.json') })
   })
@@ -375,11 +411,53 @@ describe('board setup', () => {
     expect(projects.state.operations).toEqual([])
   })
 
+  it('asks before using a board the repository names, and remembers the answer', async () => {
+    const { projects, run } = setupRunner()
+    const project = projects.addProject('acme', 7)
+    await mkdir(dirname(repoSettingsPath(repo)), { recursive: true })
+    await writeFile(repoSettingsPath(repo), JSON.stringify({ board: BOARD }))
+    const { ask, asked } = answers('y')
+    expect((await setupBoard({ repoRoot: repo }, { run, ask })).ok).toBe(true)
+    expect(asked[0]).toContain('names the project board')
+    expect(project.fields.map(f => f.name)).toContain('Agent turns')
+    expect((await loadBoardSettings(repo, 'acme/app'))?.source).toBe(repoSettingsPath(repo))
+  })
+
+  it('leaves a board the repository names alone when the user declines, or cannot be asked', async () => {
+    const { projects, run } = setupRunner()
+    projects.addProject('acme', 7)
+    await mkdir(dirname(repoSettingsPath(repo)), { recursive: true })
+    await writeFile(repoSettingsPath(repo), JSON.stringify({ board: BOARD }))
+    for (const deps of [{ run, ...answers('n') }, { run }]) {
+      const result = await setupBoard({ repoRoot: repo }, deps)
+      expect(result.checks.map(c => c.label)).toEqual([
+        'Project board in .claude/sessionstat.json not used: https://github.com/orgs/acme/projects/7',
+      ])
+    }
+    expect(projects.state.operations).toEqual([])
+    expect(await loadBoardSettings(repo, 'acme/app')).toBeNull()
+  })
+
+  it('accepts a shared board given by its URL', async () => {
+    const { projects, run } = setupRunner()
+    const project = projects.addProject('acme', 7)
+    await mkdir(dirname(repoSettingsPath(repo)), { recursive: true })
+    await writeFile(repoSettingsPath(repo), JSON.stringify({ board: { ...BOARD, prefix: 'AI ' } }))
+    const result = await setupBoard(
+      { repoRoot: repo, choice: 'https://github.com/orgs/acme/projects/7' },
+      { run }
+    )
+    expect(result.ok).toBe(true)
+    expect(project.fields.map(f => f.name)).toContain('AI turns')
+    expect((await loadBoardSettings(repo, 'acme/app'))?.source).toBe(repoSettingsPath(repo))
+  })
+
   it('re-checks an existing board instead of asking', async () => {
     const { projects, run } = setupRunner()
     const project = projects.addProject('acme', 7)
     await mkdir(dirname(repoSettingsPath(repo)), { recursive: true })
     await writeFile(repoSettingsPath(repo), JSON.stringify({ board: BOARD }))
+    await updateConfig({ boards: { 'acme/app': BOARD } })
     const { ask, asked } = answers()
     const result = await setupBoard({ repoRoot: repo }, { run, ask })
     expect(asked).toEqual([])

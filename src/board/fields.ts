@@ -22,7 +22,7 @@ export interface FieldSpec {
   value: (sessions: DataSession[]) => FieldValue
 }
 
-const DEFAULT_PREFIX = 'Agent '
+export const DEFAULT_PREFIX = 'Agent '
 
 const round = (n: number, places: number) => {
   const f = 10 ** places
