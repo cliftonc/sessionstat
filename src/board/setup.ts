@@ -15,7 +15,9 @@ import {
   type BoardSettings,
   loadBoardSettings,
   parseProjectUrl,
+  pendingSharedBoard,
   repoSlug,
+  sameBoard,
   saveBoardSettings,
 } from './settings.js'
 
@@ -83,7 +85,34 @@ export async function setupBoard(
   }
 
   const existing = await loadBoardSettings(repoRoot, slug)
+  const pending = await pendingSharedBoard(repoRoot, slug)
   let choice = options.choice
+  if (!choice && pending) {
+    // The repository's file came with the branch, so anyone who can push one could have
+    // written it: nothing is written to the board it names until the user says so.
+    const { board } = pending
+    const url = board.url ?? `https://github.com/orgs/${board.owner}/projects/${board.number}`
+    const prefix = board.prefix !== undefined ? `, fields named "${board.prefix}…"` : ''
+    const accepted =
+      deps.ask &&
+      yes(
+        await deps.ask(
+          `${pending.source.slice(repoRoot.length + 1)} names the project board ${url}${prefix}. Write ${slug}'s PR stats to it with your gh login? [y/N] `
+        )
+      )
+    if (accepted) {
+      await saveBoardSettings({ slug }, board)
+      return verifyBoard(slug, repoRoot, board, pending.source, deps, checks)
+    }
+    checks.push({
+      ok: true,
+      warn: true,
+      label: `Project board in ${pending.source.slice(repoRoot.length + 1)} not used: ${url}`,
+      detail: 'It came with the repository; sessionstat writes to it once you accept it',
+      fix: `sessionstat board setup ${url}`,
+    })
+    if (!existing) return done()
+  }
   if (!choice && existing) {
     return verifyBoard(slug, repoRoot, existing.board, existing.source, deps, checks)
   }
@@ -145,8 +174,12 @@ export async function setupBoard(
     target = parsed
   }
 
+  // Picking the board the repository shares accepts it, prefix and all.
+  const shared = pending ?? (existing?.source.startsWith(repoRoot) ? existing : null)
+  const sharedTarget =
+    shared && sameBoard(shared.board, { ...target, prefix: shared.board.prefix }) ? shared : null
   const board: BoardSettings = {
-    ...(existing?.board ?? {}),
+    ...(sharedTarget?.board ?? existing?.board ?? {}),
     owner: target.owner,
     number: target.number,
   }
@@ -155,14 +188,14 @@ export async function setupBoard(
   board.url = fetched
 
   let share = options.share
-  if (share === undefined && existing?.source.startsWith(repoRoot)) share = true
+  if (share === undefined && sharedTarget) share = true
   if (share === undefined && deps.ask) {
     const answer = await deps.ask(
       `Share the board setting with everyone in ${slug} (writes .claude/sessionstat.json, to commit)? ${options.shareDefault ? '[Y/n]' : '[y/N]'} `
     )
     share = answer.trim() ? yes(answer) : !!options.shareDefault
   }
-  const where = share ? { repoRoot } : { slug }
+  const where = share ? { slug, repoRoot } : { slug }
   const saved = await saveBoardSettings(where, board)
   checks.push({
     ok: true,

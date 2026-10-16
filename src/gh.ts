@@ -34,9 +34,13 @@ export async function findPr(
   cwd: string,
   options: { timeoutMs?: number; branch?: string; anyState?: boolean } = {}
 ): Promise<PrLookup> {
-  const args = ['pr', 'view']
-  if (options.branch) args.push(options.branch)
-  args.push('--json', 'id,number,url,headRefName,state,createdAt')
+  // A branch name can start with `-` (git allows `refs/heads/-R…`, and a clone checks it out),
+  // and gh would read it as a flag: refuse it, and keep it behind `--` regardless.
+  if (options.branch?.startsWith('-')) {
+    return { status: 'error', message: `refusing a PR or branch name starting with "-"` }
+  }
+  const args = ['pr', 'view', '--json', 'id,number,url,headRefName,state,createdAt']
+  if (options.branch) args.push('--', options.branch)
   const result = await run('gh', args, { cwd, timeoutMs: options.timeoutMs ?? GH_TIMEOUT })
   return interpretPrView(result, options)
 }

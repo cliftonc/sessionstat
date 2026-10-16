@@ -260,9 +260,9 @@ Fields are created if missing and matched by name; a field of yours with the sam
 different type is left alone. Only changed values are written, in one request. A board that
 cannot be written is logged (`sessionstat logs --errors`) and never stops the comment.
 
-The setting lives under `boards` in `~/.sessionstat/config.json`, keyed by `owner/repo`, or,
-to share it with the team, in `<repo>/.claude/sessionstat.json` (`sessionstat board setup
---repo`), which wins:
+The setting lives under `boards` in `~/.sessionstat/config.json`, keyed by `owner/repo`. To
+share it with the team, `sessionstat board setup --repo` also writes it to
+`<repo>/.claude/sessionstat.json`, to commit:
 
 ```json
 { "board": { "owner": "acme", "number": 7, "prefix": "Agent ", "fields": ["sessions", "minutes", "cost"] } }
@@ -270,6 +270,10 @@ to share it with the team, in `<repo>/.claude/sessionstat.json` (`sessionstat bo
 
 `prefix` (default `Agent `) and `fields` (keys from `sessionstat board status`; all by default)
 are optional.
+
+The repository file arrives with whatever branch you check out, so sessionstat does not write to
+the board it names until you accept it: `sessionstat board setup` asks (or pass the board's URL),
+and records it in your config.json. Until then your own setting, if any, is used.
 
 ## Commands
 
@@ -352,7 +356,7 @@ There are two dollar figures, and they are never added together:
 | `enabled` | `true` | `false` turns sessionstat off everywhere it is installed |
 | `disabledRepos` | `[]` | Repository roots where it is off |
 | `projectInstalls` | `[]` | Repositories with a project-scope install (kept by setup) |
-| `boards` | `{}` | Project boards by `owner/repo`, unless the repository shares one in `.claude/sessionstat.json` |
+| `boards` | `{}` | Project boards by `owner/repo`; a board shared in `.claude/sessionstat.json` is used only once it is here too |
 
 ## Troubleshooting
 
